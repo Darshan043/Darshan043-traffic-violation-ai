@@ -5,6 +5,7 @@ __pycache__/
 node_modules/
 data/raw/
 data/videos/
+data/output/
 storage/
 runs/
 *.mp4

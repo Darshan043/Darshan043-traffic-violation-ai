@@ -13,6 +13,7 @@ REQUIRED_FOLDERS = (
     "frontend",
     "datasets",
     "models",
+    "models/pretrained",
     "data",
     "storage",
     "tests",
