@@ -8,6 +8,9 @@ data/videos/
 data/output/
 storage/
 runs/
+logs/
+datasets/helmet_raw/
+datasets/helmet/
 *.mp4
 *.avi
 *.pt
@@ -20,3 +23,5 @@ runs/
 !storage/uploads/.gitkeep
 !storage/logs/
 !storage/logs/.gitkeep
+!datasets/DATASET_SOURCES.md
+!datasets/.gitkeep

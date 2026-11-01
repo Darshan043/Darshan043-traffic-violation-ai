@@ -45,6 +45,9 @@ of unique vehicles.
 
 ## What to learn
 
+**Caution:** Each setting was measured in a single run. Small FPS differences between settings are
+noisy and should not be treated as reliable performance differences.
+
 1. Lowering confidence finds many more possible vehicles, but some extra boxes may be false alarms; raising it removes weaker detections.
 2. A larger image size can reveal more small or distant vehicles, but it takes more processing time.
 3. `--skip 2` and `--skip 3` process fewer frames, so fast-moving vehicles can pass between the frames that are checked.
