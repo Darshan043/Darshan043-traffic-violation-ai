@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--patience", type=int, default=20)
     parser.add_argument("--name", default="helmet_v1")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
@@ -34,7 +35,7 @@ def main() -> None:
     print(f"Training on {'CUDA:0' if device == 0 else 'CPU'}; dataset={data}; model={model_arg}", flush=True)
     start = time.perf_counter()
     model.train(data=str(data), epochs=args.epochs, imgsz=args.imgsz, batch=args.batch,
-                workers=args.workers, patience=20, project=str(ROOT / "runs"), name=args.name,
+                workers=args.workers, patience=args.patience, project=str(ROOT / "runs"), name=args.name,
                 device=device, resume=args.resume)
     elapsed = time.perf_counter() - start
     print(f"Training wall time: {elapsed:.1f}s ({elapsed/60:.1f} min); requested epochs={args.epochs}", flush=True)

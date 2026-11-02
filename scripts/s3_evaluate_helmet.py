@@ -35,14 +35,29 @@ def main() -> None:
         if cls_id < len(class_p):
             print(f"{name:<14} {class_p[cls_id]:10.4f} {class_r[cls_id]:10.4f} {class_ap50[cls_id]:10.4f} {class_maps[cls_id]:10.4f}")
 
+    cm = metrics.confusion_matrix.matrix
+    labels = [names[i] for i in range(len(names))] + ["background"]
+    print("\nCONFUSION MATRIX (rows=predicted, columns=true; final row/column=background)")
+    print("pred\\true  " + "  ".join(f"{label:>12}" for label in labels))
+    for label, row in zip(labels, cm):
+        print(f"{label:>12}  " + "  ".join(f"{int(value):12d}" for value in row))
+
     plot_source = Path(metrics.save_dir)
     docs_dir = ROOT / "docs" / "stage3"
     docs_dir.mkdir(parents=True, exist_ok=True)
     copied = []
-    for filename in ("confusion_matrix.png", "confusion_matrix_normalized.png", "PR_curve.png", "results.png"):
-        src = plot_source / filename
+    plot_map = {
+        "confusion_matrix.png": "confusion_matrix.png",
+        "confusion_matrix_normalized.png": "confusion_matrix_normalized.png",
+        "BoxPR_curve.png": "PR_curve.png",
+        "BoxP_curve.png": "P_curve.png",
+        "BoxR_curve.png": "R_curve.png",
+        "BoxF1_curve.png": "F1_curve.png",
+    }
+    for source_name, output_name in plot_map.items():
+        src = plot_source / source_name
         if src.exists() and src.stat().st_size <= 10 * 1024 * 1024:
-            dst = docs_dir / filename
+            dst = docs_dir / output_name
             shutil.copy2(src, dst)
             copied.append(dst.name)
     print(f"Plots copied to {docs_dir}: {', '.join(copied) or 'none'}")

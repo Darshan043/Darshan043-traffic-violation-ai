@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=ROOT / "datasets" / "helmet" / "data.yaml")
     parser.add_argument("--preview-dir", type=Path, default=ROOT / "data" / "output" / "label_check")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--samples", type=int, default=12)
     args = parser.parse_args()
     yaml_text = args.data.read_text(encoding="utf-8")
     match = re.search(r"(?m)^path:\s*(.+?)\s*$", yaml_text)
@@ -111,7 +112,7 @@ def main() -> None:
     print(f"  images: {images_total}; label_files: {labels_total}")
     args.preview_dir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)
-    chosen = rng.sample(training_candidates, min(12, len(training_candidates)))
+    chosen = rng.sample(training_candidates, min(args.samples, len(training_candidates)))
     for i, image in enumerate(chosen, 1):
         frame = cv2.imread(str(image))
         label = base / "labels" / "train" / f"{image.stem}.txt"
