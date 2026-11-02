@@ -36,7 +36,7 @@ At this low default threshold there are 33 background false-positive boxes (23 h
 | 0.40 | 1.0000 | 0.9692 | 0 |
 | 0.50 | 1.0000 | 0.9692 | 0 |
 
-Recommend `0.25` as the initial demo and pipeline threshold: the held-out set showed no recall loss versus the higher thresholds, while avoiding the low-threshold false boxes. The set is small, so this is only a starting point; later multi-frame voting should smooth isolated predictions.
+The still-image verification used confidence 0.40, now the demo default. The test split showed the same precision/recall and no background false boxes at 0.25, 0.40, and 0.50; use 0.40 as the initial demo and pipeline threshold. This is only a starting point on a small test set; later multi-frame voting may smooth isolated predictions.
 
 ## Preview review and demo
 
@@ -45,6 +45,15 @@ Twelve validation predictions were saved under `data/output/val_preview/`. The r
 The initial `test_road.mp4` demo saw 223 motorcycles: 35 had a matched person, 0 had a helmet-model head, and the reason histogram was `TOO_SMALL=138`, `NO_RIDER=50`, `NO_HEAD=35`, `DRIVER_UNCLEAR=0`, `OK=0`. Median motorcycle box size was 52×76 px, below the new 60-pixel width guard. The fix runs person detection again on an upscaled, clipped motorcycle/rider crop. The COCO vehicle IDs are verified as person=0 and motorcycle=3; crop-relative head/person predictions are translated back to full-frame coordinates. Person association retains the 50%-inside rule.
 
 On the newly added `helmet_test.mp4`, the fixed demo processed 240 frames and saw 182 motorcycle detections: 181 had a matched person, 175 had a helmet-model head; reason histogram `OK=175`, `NO_RIDER=1`, `DRIVER_UNCLEAR=1`, `NO_HEAD=5`, `TOO_SMALL=0`. Labels were helmet=175, no_helmet=0, unclear=7. Five saved frames were reviewed: in the three frames with the large rider visible, the driver/person box and helmet label looked right; two sampled frames had no rider in view. Overlapping motorcycle boxes/labels were visible in one sample. This clip contains no bare-headed rider, so it cannot validate `no_helmet` decisions.
+
+### Still-image path check at confidence 0.40
+
+The demo also accepts `--images <folder>` and `--max-images N`; it annotates stills using the same complete pipeline as video and writes them under `data/output/image_check/`. Twenty test images per group were selected from label files (the test split had 49 images with a `no_helmet` label and 53 with helmet-only labels, so validation images were not needed).
+
+- **No-helmet-labeled group:** 17 motorcycle detections across 20 images; helmet=1, no_helmet=14, unclear=2. Reasons: `OK=15`, `DRIVER_UNCLEAR=2`, all other codes=0. Three images had no motorcycle detection.
+- **Helmet-only group:** 19 motorcycle detections across 20 images; helmet=17, no_helmet=0, unclear=2. Reasons: `OK=17`, `NO_HEAD=1`, `TOO_SMALL=1`, all other codes=0. Three images had no motorcycle detection.
+
+Observed failures: `No_helmet182...` was a clear bareheaded man incorrectly classified as helmet (false helmet prediction, likely headwear/background confusion); `No_helmet361...` and `No_helmet_48...` returned unclear in multi-person/multi-rider scenes where driver ordering was ambiguous; `No_helmet031...`, `No_helmet158...`, and `No_helmet380...` had visible motorcycles but the COCO motorcycle detector missed them (front/cropped or small/low-contrast views). In the helmet-only group, `imgi_4_young-happy...` returned `NO_HEAD` despite a visible helmeted rider, likely a missed helmet/head box; `imgi_11_happy...`, `imgi_18_portrait...`, and `imgi_34_man...` had visible motorcycles but no motorcycle detection (front/cropped/rear views). `Helmet_200...` included an extra tiny motorcycle box, correctly suppressed as `TOO_SMALL`. These cases are hard examples for future training and detector improvements.
 
 ## Limits and next round
 
