@@ -20,9 +20,11 @@ def main() -> None:
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--conf", type=float, default=0.001,
+                        help="Validation confidence threshold (Ultralytics default is 0.001)")
     args = parser.parse_args()
     model = YOLO(str(args.model))
-    metrics = model.val(data=str(args.data), split="test", imgsz=args.imgsz, batch=args.batch,
+    metrics = model.val(data=str(args.data), split="test", imgsz=args.imgsz, batch=args.batch, conf=args.conf,
                         workers=args.workers, plots=True, project=str(ROOT / "runs" / "helmet_eval"), name="test")
     box = metrics.box
     names = metrics.names
@@ -41,6 +43,7 @@ def main() -> None:
     print("pred\\true  " + "  ".join(f"{label:>12}" for label in labels))
     for label, row in zip(labels, cm):
         print(f"{label:>12}  " + "  ".join(f"{int(value):12d}" for value in row))
+    print(f"Background false-positive boxes at conf={args.conf:.2f}: {int(cm[:-1, -1].sum())}")
 
     plot_source = Path(metrics.save_dir)
     docs_dir = ROOT / "docs" / "stage3"

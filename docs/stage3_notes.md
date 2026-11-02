@@ -20,17 +20,31 @@ Evaluation used 102 test images and 127 objects.
 
 Confusion matrix (rows are predicted classes, columns are true classes; background is the final row/column):
 
-| Predicted \\ True | helmet | no_helmet | background |
+| Predicted \\ True at evaluator default conf=0.001 | helmet | no_helmet | background |
 |---|---:|---:|---:|
 | helmet | 61 | 0 | 23 |
 | no_helmet | 0 | 62 | 10 |
 | background | 4 | 0 | 0 |
 
-Plots are copied to `docs/stage3/`. The confusion matrix counts use Ultralytics' operating threshold and therefore do not directly reproduce the reported best-confidence precision values.
+At this low default threshold there are 33 background false-positive boxes (23 helmet + 10 no_helmet) and 4 missed helmet objects. At demo confidence 0.25 these background false boxes disappeared on this test set. The matrix counts at a fixed threshold do not directly reproduce Ultralytics' best-confidence precision/recall summary. Plots are copied to `docs/stage3/`.
+
+### Confidence threshold check
+
+| Confidence | Precision | Recall | Background false-positive boxes |
+|---:|---:|---:|---:|
+| 0.25 | 1.0000 | 0.9692 | 0 |
+| 0.40 | 1.0000 | 0.9692 | 0 |
+| 0.50 | 1.0000 | 0.9692 | 0 |
+
+Recommend `0.25` as the initial demo and pipeline threshold: the held-out set showed no recall loss versus the higher thresholds, while avoiding the low-threshold false boxes. The set is small, so this is only a starting point; later multi-frame voting should smooth isolated predictions.
 
 ## Preview review and demo
 
-Twelve validation predictions were saved under `data/output/val_preview/`. The reviewed examples were mostly plausible for obvious helmeted and bare heads, but at least one clearly bare head was called `helmet`. Small/distant heads and ambiguous headwear remain risky; public images also differ from a fixed traffic camera. The generic `test_road.mp4` fallback was used because `helmet_test.mp4` was absent. It processed 2,858 frames and saw 223 motorcycles; all 223 results were `unclear`. Three sampled frames contained no highlighted driver, so that video cannot establish that driver selection or labels work in traffic scenes.
+Twelve validation predictions were saved under `data/output/val_preview/`. The reviewed examples were mostly plausible for obvious helmeted and bare heads, but at least one clearly bare head was called `helmet`. Small/distant heads and ambiguous headwear remain risky; public images also differ from a fixed traffic camera.
+
+The initial `test_road.mp4` demo saw 223 motorcycles: 35 had a matched person, 0 had a helmet-model head, and the reason histogram was `TOO_SMALL=138`, `NO_RIDER=50`, `NO_HEAD=35`, `DRIVER_UNCLEAR=0`, `OK=0`. Median motorcycle box size was 52×76 px, below the new 60-pixel width guard. The fix runs person detection again on an upscaled, clipped motorcycle/rider crop. The COCO vehicle IDs are verified as person=0 and motorcycle=3; crop-relative head/person predictions are translated back to full-frame coordinates. Person association retains the 50%-inside rule.
+
+On the newly added `helmet_test.mp4`, the fixed demo processed 240 frames and saw 182 motorcycle detections: 181 had a matched person, 175 had a helmet-model head; reason histogram `OK=175`, `NO_RIDER=1`, `DRIVER_UNCLEAR=1`, `NO_HEAD=5`, `TOO_SMALL=0`. Labels were helmet=175, no_helmet=0, unclear=7. Five saved frames were reviewed: in the three frames with the large rider visible, the driver/person box and helmet label looked right; two sampled frames had no rider in view. Overlapping motorcycle boxes/labels were visible in one sample. This clip contains no bare-headed rider, so it cannot validate `no_helmet` decisions.
 
 ## Limits and next round
 

@@ -1,6 +1,7 @@
 import pytest
 
-from ai_engine.association import Box, HeadDetection, driver_helmet_result
+from ai_engine.association import Box, HeadDetection, driver_helmet_result, riders_for_motorcycle
+from scripts.s3_helmet_demo import crop_box_to_frame
 
 
 MOTO = Box(0, 100, 200, 200)
@@ -50,3 +51,15 @@ def test_head_on_passenger_only_is_unclear():
     driver = lower  # approaching
     result = driver_helmet_result(MOTO, [upper, lower], [head_for(upper)], "approaching")
     assert (result.label, result.reason) == ("unclear", "NO_HEAD")
+
+
+def test_motorcycle_rider_requires_at_least_half_person_inside_expanded_box():
+    moto = Box(0, 100, 200, 200)  # expanded y range is 40..200
+    exactly_half_inside = Box(10, 20, 30, 60)  # 20/40 px vertically inside
+    less_than_half_inside = Box(50, 21, 70, 58)  # 18/37 px vertically inside
+    assert riders_for_motorcycle(moto, [exactly_half_inside, less_than_half_inside]) == [exactly_half_inside]
+
+
+def test_crop_head_box_is_scaled_and_offset_to_full_frame():
+    crop_box = Box(20, 10, 60, 30)
+    assert crop_box_to_frame(crop_box, crop_x=100, crop_y=50, scale=2) == Box(110, 55, 130, 65)
