@@ -46,3 +46,21 @@ python scripts\s3_helmet_demo.py --save
 
 The demo can run without a window using `--no-show`. Dataset mapping and current training status are
 documented in `docs/stage3_notes.md`.
+
+## How to run Stage 4
+
+Use the project virtual-environment Python directly from PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\prepare_seatbelt_dataset.py
+.\.venv\Scripts\python.exe scripts\check_seatbelt_dataset.py
+.\.venv\Scripts\python.exe scripts\s4_train_seatbelt.py
+.\.venv\Scripts\python.exe scripts\s4_evaluate_seatbelt.py
+.\.venv\Scripts\python.exe scripts\make_car_crops.py --skip 3
+.\.venv\Scripts\python.exe scripts\s4_seatbelt_demo.py --images datasets\seatbelt_raw\test\images --save data\output\seatbelt_test_images --no-show --debug
+.\.venv\Scripts\python.exe scripts\s4_seatbelt_demo.py --video data\videos\test_road.mp4 --save --no-show --debug
+```
+
+The demo assumes the driver's seat is on the right, as in India. It draws green `SEATBELT`,
+red `NO SEATBELT`, and yellow `UNCLEAR` labels. Read [the Stage 4 notes](docs/stage4_notes.md)
+and [the model card](models/seatbelt/README.md) before interpreting results.

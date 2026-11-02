@@ -4,8 +4,14 @@ __pycache__/
 .env
 node_modules/
 data/raw/
+data/car_crops/
 data/videos/
 data/output/
+datasets/seatbelt/
+datasets/seatbelt_raw/
+datasets/seatbelt_raw2/
+datasets/seatbelt_previews/
+datasets/seatbelt_evaluation/
 storage/
 runs/
 logs/
