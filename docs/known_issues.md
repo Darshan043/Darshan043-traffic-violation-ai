@@ -6,6 +6,13 @@
 - The helmet test set contains only 102 images.
 - The Stage 3 demo clip does not include a bare-headed rider.
 
+## Stage 4 seatbelt limitations
+
+- The test split has no `no_seatbelt` labels; it cannot measure that class. Validation at confidence 0.40 reports precision/recall/mAP50 of 1.000/1.000/0.995 for both classes, but validation was used to select the best checkpoint, so these scores are optimistic.
+- On `test_road.mp4`, the initial 0.40 demo had 7,812 `OK` results: 568 `seatbelt` and 7,244 `no_seatbelt`. The six inspected no-seatbelt crops were blurred, distant driver windows and the belt was not visually clear.
+- Because 92.7% of `OK` results were `no_seatbelt`, the run was repeated with no-seatbelt confidence 0.60 and car minimum height 200 px. It produced 21 `OK` results, all `no_seatbelt`; 24,453 cars were excluded as too small. The six stricter-run crops were still blurred windows with no clearly visible belt, so this change does not establish that the predictions are correct.
+- Training and validation images are close-up photos, not CCTV-style road footage. Do not use these predictions as violation evidence without in-domain data and manual review.
+
 ## Stage 6 video validation limits
 
 - The only available Stage 6 videos are `helmet_test.mp4` (240 frames) and
@@ -38,3 +45,7 @@
   suppressions were shorter than their requested 10–30-frame window because
   the detector had already omitted those IDs in some frames. This does not
   establish real-world recovery accuracy.
+
+## Single-pass helmet+seatbelt loop
+
+Currently, when a camera enables both helmet and seatbelt checks, the pipeline runs helmet and seatbelt as two sequential passes over the source. A single-pass helmet+seatbelt loop combining motorcycle and car tracking in one frame loop is planned as a later improvement.

@@ -61,6 +61,7 @@ class CameraConfig:
     helmet_conf: float = 0.40
     seatbelt_conf: float = 0.40
     imgsz: int = 640
+    device: str | None = None
 
 
 @dataclass

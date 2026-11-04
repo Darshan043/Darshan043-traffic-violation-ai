@@ -43,3 +43,10 @@ ultralytics==8.4.197
 ultralytics-platform==0.1.102
 ultralytics-thop==2.2.4
 urllib3==2.8.0
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+PyJWT==2.15.1
+pwdlib[argon2]==0.3.1
+python-dotenv==1.2.4
+pydantic-settings==2.16.2

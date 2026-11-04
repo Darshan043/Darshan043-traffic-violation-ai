@@ -1,10 +1,13 @@
-"""Standalone Stage 6 violation pipeline orchestration."""
+"""Standalone Stage 6 and Stage 7 violation pipeline orchestration."""
 from __future__ import annotations
 
 from collections.abc import Callable
 import json
 from pathlib import Path
+import time
 from typing import Any, Literal
+
+import cv2
 
 from ai_engine.config import EngineConfig, load_config
 from ai_engine.helmet_pipeline import process_motorcycles
@@ -55,6 +58,40 @@ def suppress_duplicate_events(
     return sorted(kept, key=lambda e: int(e.get("frame_idx", 0))), suppressed
 
 
+class IncrementalDuplicateSuppressor:
+    """Check events incrementally as they arrive against already emitted events."""
+
+    def __init__(self, time_window_sec: float = 2.0, iou_threshold: float = 0.5) -> None:
+        self.time_window_sec = time_window_sec
+        self.iou_threshold = iou_threshold
+        self.kept: list[dict[str, Any]] = []
+        self.suppressed: list[dict[str, Any]] = []
+
+    def process(self, event: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+        match = next(
+            (
+                prior for prior in self.kept
+                if str(prior.get("camera_id")) == str(event.get("camera_id"))
+                and prior.get("vehicle_type") == event.get("vehicle_type")
+                and abs(float(prior.get("timestamp_sec", 0)) -
+                        float(event.get("timestamp_sec", 0))) <= self.time_window_sec
+                and _event_iou(prior.get("vehicle_box"), event.get("vehicle_box")) > self.iou_threshold
+            ),
+            None,
+        )
+        if match is None:
+            self.kept.append(event)
+            return True, event
+        else:
+            suppressed_event = {
+                **event,
+                "suppressed_by": match.get("event_id"),
+                "suppression_reason": "SAME_CAMERA_TYPE_TIME_AND_BOX_IOU",
+            }
+            self.suppressed.append(suppressed_event)
+            return False, suppressed_event
+
+
 def _config_for_source(config: EngineConfig, source: str | Path) -> EngineConfig:
     source_text = str(source)
     if source_text.lower().startswith(("rtsp://", "http://", "https://")):
@@ -86,14 +123,18 @@ def run_pipeline(
     mode: PipelineMode = "both",
     on_event: Callable[[dict[str, Any]], None] | None = None,
     on_frame: Callable[[str, int, Any], None] | None = None,
+    on_annotated_frame: Callable[[bytes, int], None] | None = None,
     on_transfer: Callable[[dict[str, Any]], None] | None = None,
     on_crossing: Callable[[dict[str, Any]], None] | None = None,
     on_track: Callable[[dict[str, Any]], None] | None = None,
     on_suppressed: Callable[[dict[str, Any]], None] | None = None,
+    stop_event: Any = None,
+    live: bool = False,
+    max_annotated_fps: float = 10.0,
     helmet_detector=None,
     seatbelt_detector=None,
 ) -> list[dict[str, Any]]:
-    """Run enabled Stage 6 checks over a file or stream and suppress duplicates."""
+    """Run enabled Stage 6 checks over a file or stream with live/offline suppression."""
     if mode not in ("helmet", "seatbelt", "both"):
         raise ValueError("mode must be 'helmet', 'seatbelt', or 'both'")
     if config is None:
@@ -111,7 +152,26 @@ def run_pipeline(
               "car tracking remains active.")
 
     events: list[dict[str, Any]] = []
+    incremental_suppressor = IncrementalDuplicateSuppressor() if live else None
+    last_annotated_time = 0.0
+    min_frame_interval = 1.0 / max(0.1, max_annotated_fps)
+
+    def live_event_handler(event: dict[str, Any]) -> None:
+        if incremental_suppressor is not None:
+            is_kept, processed = incremental_suppressor.process(event)
+            if is_kept:
+                if on_event is not None:
+                    on_event(processed)
+            else:
+                if on_suppressed is not None:
+                    on_suppressed(processed)
+        else:
+            events.append(event)
+
     for selected_mode in modes:
+        if stop_event is not None and stop_event.is_set():
+            break
+
         run_config = load_config({
             "camera": {
                 **config.camera.__dict__,
@@ -129,23 +189,57 @@ def run_pipeline(
         })
 
         def frame_callback(frame_idx: int, frame, selected=selected_mode) -> None:
+            nonlocal last_annotated_time
             if on_frame is not None:
                 on_frame(selected, frame_idx, frame)
 
+            if on_annotated_frame is not None:
+                now = time.monotonic()
+                if (now - last_annotated_time) >= min_frame_interval or last_annotated_time == 0.0:
+                    display_frame = frame.copy()
+                    # Show which pass the stream is in
+                    pass_text = f"PASS: {selected.upper()}"
+                    cv2.putText(
+                        display_frame,
+                        pass_text,
+                        (15, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 255, 255),
+                        2,
+                    )
+                    h, w = display_frame.shape[:2]
+                    target_w = 960
+                    target_h = max(1, int(h * target_w / w))
+                    resized = cv2.resize(display_frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
+                    success, buffer = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                    if success:
+                        on_annotated_frame(buffer.tobytes(), frame_idx)
+                        last_annotated_time = now
+
+        target_event_sink = live_event_handler if live else events.append
+
         if selected_mode == "helmet":
             selected_events = process_motorcycles(
-                source_text, run_config, events.append, detector=helmet_detector,
-                on_frame=frame_callback if on_frame is not None else None,
+                source_text, run_config, target_event_sink, detector=helmet_detector,
+                on_frame=frame_callback if (on_frame is not None or on_annotated_frame is not None) else None,
                 on_transfer=on_transfer, on_crossing=on_crossing, on_track=on_track,
+                stop_event=stop_event,
             )
         else:
             selected_events = process_cars(
-                source_text, run_config, events.append, detector=seatbelt_detector,
-                on_frame=frame_callback if on_frame is not None else None,
+                source_text, run_config, target_event_sink, detector=seatbelt_detector,
+                on_frame=frame_callback if (on_frame is not None or on_annotated_frame is not None) else None,
                 on_transfer=on_transfer, on_crossing=on_crossing, on_track=on_track,
+                stop_event=stop_event,
             )
-        if len(events) < len(selected_events):
+
+        if not live and len(events) < len(selected_events):
             events.extend(selected_events[len(events):])
+
+    if live:
+        assert incremental_suppressor is not None
+        return sorted(incremental_suppressor.kept, key=lambda event: (event.get("frame_idx", 0), event.get("vehicle_class", "")))
 
     kept, suppressed = suppress_duplicate_events(events)
     if on_event is not None:

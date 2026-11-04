@@ -66,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Zone/crossing line as x,y pairs. Values in 0-1 are normalised.",
     )
     parser.add_argument("--camera-id", default="cam1")
-    parser.add_argument("--camera-view", choices=("approaching", "receding"), default="approaching")
+    parser.add_argument("--camera-view", choices=("front", "side_or_rear", "unknown"), default="unknown")
+    parser.add_argument("--motorcycle-view", choices=("approaching", "receding"), default="approaching")
     parser.add_argument("--driver-side", choices=("left", "right"), default="right")
     parser.add_argument("--skip", type=int, default=1)
     parser.add_argument("--start-sec", type=float, default=0.0)
@@ -89,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seatbelt-model", type=Path)
     parser.add_argument("--tracker", type=Path)
     parser.add_argument("--evidence-dir", type=Path)
+    parser.add_argument("--device", help="Computation device (e.g. 'cpu', '0').")
     args = parser.parse_args(argv)
 
     if args.skip < 1:
@@ -117,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         "camera": {
             "id": args.camera_id,
             "camera_view": args.camera_view,
+            "motorcycle_view": args.motorcycle_view,
             "driver_side": args.driver_side,
             "frame_skip": args.skip,
             "zone": args.zone,
@@ -127,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             "helmet_conf": args.helmet_conf,
             "seatbelt_conf": args.seatbelt_conf,
             "imgsz": args.imgsz,
+            "device": args.device,
             "check_helmet": args.mode in ("helmet", "both"),
             "check_seatbelt": args.mode in ("seatbelt", "both"),
         },

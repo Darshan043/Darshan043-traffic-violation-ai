@@ -114,6 +114,9 @@ def process_frame(
     imgsz: int,
     debug_counts: Counter,
     debug: bool,
+    no_seatbelt_confidence: float = 0.40,
+    save_no_seatbelt_dir: Path | None = None,
+    save_no_seatbelt_limit: int = 6,
 ):
     output = frame.copy()
     result = vehicle_model.predict(
@@ -151,9 +154,22 @@ def process_frame(
             continue
         debug_counts["crops_made"] += 1
         detections = get_seatbelt_detections(seatbelt_model, crop, imgsz)
+        detections = [
+            detection for detection in detections
+            if detection.label != "no_seatbelt" or detection.confidence >= no_seatbelt_confidence
+        ]
         local_crop = Box(0, 0, crop.shape[1], crop.shape[0])
         decision = seatbelt_result(detections, local_crop, min_confidence=0.40)
         debug_counts[f"reason:{decision.reason}"] += 1
+        if decision.reason == "OK":
+            debug_counts[f"ok:{decision.label}"] += 1
+        if (decision.reason == "OK" and decision.label == "no_seatbelt"
+                and save_no_seatbelt_dir is not None
+                and debug_counts["no_seatbelt_crops_saved"] < save_no_seatbelt_limit):
+            save_no_seatbelt_dir.mkdir(parents=True, exist_ok=True)
+            crop_path = save_no_seatbelt_dir / f"frame_{debug_counts['cars_seen']:07d}_no_seatbelt.jpg"
+            cv2.imwrite(str(crop_path), crop)
+            debug_counts["no_seatbelt_crops_saved"] += 1
 
         for detection in detections:
             dx1, dy1, dx2, dy2 = (
@@ -213,6 +229,8 @@ def main() -> None:
     parser.add_argument("--vehicle-model", type=Path, default=DEFAULT_VEHICLE_MODEL)
     parser.add_argument("--driver-side", choices=("left", "right"), default="right")
     parser.add_argument("--min-height", type=int, default=120)
+    parser.add_argument("--no-seatbelt-conf", type=float, default=0.40)
+    parser.add_argument("--save-no-seatbelt-crops", type=Path)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--output-width", type=int, default=960)
     parser.add_argument(
@@ -277,6 +295,8 @@ def main() -> None:
                     imgsz=args.imgsz,
                     debug_counts=debug_counts,
                     debug=args.debug,
+                    no_seatbelt_confidence=args.no_seatbelt_conf,
+                    save_no_seatbelt_dir=args.save_no_seatbelt_crops,
                 )
                 if output_size != (width, height):
                     output = cv2.resize(output, output_size, interpolation=cv2.INTER_AREA)
@@ -337,6 +357,11 @@ def main() -> None:
         print("  reason histogram:")
         for reason in ("OK", "LOW_CONF", "NO_DRIVER", "TOO_SMALL"):
             print(f"    {reason}: {debug_counts[f'reason:{reason}']}")
+        print("  OK class counts:")
+        for label in ("seatbelt", "no_seatbelt", "unclear"):
+            print(f"    {label}: {debug_counts[f'ok:{label}']}")
+        if args.save_no_seatbelt_crops:
+            print(f"  no_seatbelt crops saved: {debug_counts['no_seatbelt_crops_saved']}")
 
 
 if __name__ == "__main__":

@@ -49,6 +49,9 @@ class HelmetDetector:
         self.config = config
         self.vehicle_model = vehicle_model if vehicle_model is not None else YOLO(str(config.paths.vehicle_model))
         self.helmet_model = helmet_model if helmet_model is not None else YOLO(str(config.paths.helmet_model))
+        if getattr(self.config.camera, "device", None):
+            self.vehicle_model.to(self.config.camera.device)
+            self.helmet_model.to(self.config.camera.device)
         self._person_frame = None
         self._person_cache: list[Box] = []
         vehicle_names = self.vehicle_model.names
@@ -137,10 +140,10 @@ class HelmetDetector:
                         label, float(item.conf.item()),
                     ))
 
-        decision = driver_helmet_result(moto, persons, heads, self.config.camera.camera_view)
+        decision = driver_helmet_result(moto, persons, heads, self.config.camera.motorcycle_view)
         # Keep driver geometry for overlays; this uses exactly the same rider rule.
         riders = riders_for_motorcycle(moto, persons)
-        driver = pick_driver(riders, self.config.camera.camera_view)
+        driver = pick_driver(riders, self.config.camera.motorcycle_view)
         return HelmetAnalysis(track, decision, driver, tuple(riders), tuple(persons),
                               tuple(heads), crop_box)
 

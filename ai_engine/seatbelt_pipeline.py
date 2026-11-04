@@ -49,6 +49,9 @@ class SeatbeltDetector:
             raise RuntimeError("ultralytics is required for the seatbelt pipeline")
         self.vehicle_model = vehicle_model if vehicle_model is not None else YOLO(str(config.paths.vehicle_model))
         self.seatbelt_model = seatbelt_model if seatbelt_model is not None else YOLO(str(config.paths.seatbelt_model))
+        if getattr(self.config.camera, "device", None):
+            self.vehicle_model.to(self.config.camera.device)
+            self.seatbelt_model.to(self.config.camera.device)
 
     def track_cars(self, frame) -> list[Track]:
         result = self.vehicle_model.track(
@@ -176,6 +179,7 @@ def process_cars(
     on_transfer: Callable[[dict[str, Any]], None] | None = None,
     on_crossing: Callable[[dict[str, Any]], None] | None = None,
     on_track: Callable[[dict[str, Any]], None] | None = None,
+    stop_event: Any = None,
 ) -> list[dict[str, Any]]:
     """Process a video and emit one seatbelt decision per car zone crossing."""
     detector = detector or SeatbeltDetector(config)
@@ -189,6 +193,8 @@ def process_cars(
     frames_processed = cars_seen = observations_added = crossings = 0
 
     for frame_idx, frame in source.frames():
+        if stop_event is not None and stop_event.is_set():
+            break
         frames_processed += 1
         if zone is None:
             zone = Zone(camera.zone, lost_near_distance=camera.lost_near_distance,

@@ -81,6 +81,7 @@ def process_motorcycles(
     on_transfer: Callable[[dict[str, Any]], None] | None = None,
     on_crossing: Callable[[dict[str, Any]], None] | None = None,
     on_track: Callable[[dict[str, Any]], None] | None = None,
+    stop_event: Any = None,
 ) -> list[dict[str, Any]]:
     """Process a video and emit one helmet decision per motorcycle zone crossing.
 
@@ -97,6 +98,8 @@ def process_motorcycles(
     frames_processed = motorcycles_seen = observations_added = crossings = 0
 
     for frame_idx, frame in source.frames():
+        if stop_event is not None and stop_event.is_set():
+            break
         frames_processed += 1
         if zone is None:
             # Normalised camera coordinates need the actual frame dimensions.

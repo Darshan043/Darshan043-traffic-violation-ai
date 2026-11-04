@@ -32,5 +32,10 @@ storage/evidence/*
 !storage/uploads/.gitkeep
 !storage/logs/
 !storage/logs/.gitkeep
+storage/logs/*.log
+storage/logs/*.log.*
+storage/data/
+storage/cli_events.json
+storage/integration_run_log.txt
 !datasets/DATASET_SOURCES.md
 !datasets/.gitkeep

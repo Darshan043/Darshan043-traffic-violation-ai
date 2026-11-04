@@ -87,3 +87,49 @@ mean confidence). Use `--tracker PATH` to choose another YAML. `--start-sec` and
 a reproducible video window. Larger label/box/trail options change only the inspection view, not
 detection or association settings. See [Stage 5 notes](docs/stage5_notes.md) for the measured
 comparisons, limitations, crop experiment, and interpretation guidance.
+
+
+## How to run Stage 7
+
+Stage 7 is a FastAPI backend that exposes every AI engine feature as a REST + WebSocket API.
+
+### Quick start
+
+```powershell
+# 1. Create the admin account (once — prompts for password)
+.\.venv\Scripts\python.exe scripts\create_admin.py
+
+# 2. Start the server (port 8000)
+.\scripts\run_backend.ps1
+
+# 3. Open the interactive docs
+start http://localhost:8000/docs
+```
+
+### Run unit tests (no real models, ~24 s)
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+### Run the real-video integration test
+
+The server must already be running in another terminal:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\integration\ -m integration -s -v
+```
+
+### Key endpoints
+
+| URL | What it does |
+|-----|-------------|
+| `POST /api/auth/login` | Get a JWT token |
+| `GET  /api/cameras` | List cameras |
+| `POST /api/cameras/{id}/start` | Start AI analysis |
+| `GET  /api/stream/{id}?token=…` | Live MJPEG frames |
+| `WS   /ws/alerts?token=…` | Violation events (WebSocket) |
+| `GET  /api/violations` | Query stored violations |
+| `GET  /api/stats/summary` | Compliance summary |
+
+See [Stage 7 notes](docs/stage7_notes.md) for the full endpoint table, architecture, and known limits.
