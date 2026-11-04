@@ -1,4 +1,9 @@
-"""Stage 6 model wrapper for motorcycle tracking and helmet observations."""
+"""Stage 6 model wrapper for motorcycle tracking and helmet observations.
+
+The ``ultralytics`` / ``torch`` import is intentionally *lazy* (done inside
+``HelmetDetector.__init__``) so that importing this module from tests does
+**not** initialise CUDA or load any model weights.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-from ultralytics import YOLO
 
 from ai_engine.association import (
     Box,
@@ -47,8 +51,15 @@ class HelmetDetector:
 
     def __init__(self, config: EngineConfig, vehicle_model=None, helmet_model=None) -> None:
         self.config = config
-        self.vehicle_model = vehicle_model if vehicle_model is not None else YOLO(str(config.paths.vehicle_model))
-        self.helmet_model = helmet_model if helmet_model is not None else YOLO(str(config.paths.helmet_model))
+        if vehicle_model is None or helmet_model is None:
+            # Keep fake-detector tests and module imports free of Torch/CUDA.
+            from ultralytics import YOLO  # noqa: PLC0415
+            if vehicle_model is None:
+                vehicle_model = YOLO(str(config.paths.vehicle_model))
+            if helmet_model is None:
+                helmet_model = YOLO(str(config.paths.helmet_model))
+        self.vehicle_model = vehicle_model
+        self.helmet_model = helmet_model
         if getattr(self.config.camera, "device", None):
             self.vehicle_model.to(self.config.camera.device)
             self.helmet_model.to(self.config.camera.device)

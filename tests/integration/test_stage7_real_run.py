@@ -1,4 +1,4 @@
-"""
+r"""
 Integration test: real video run through the backend API.
 
 Run with:

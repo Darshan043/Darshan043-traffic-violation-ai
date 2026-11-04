@@ -28,9 +28,9 @@ def get_stats_summary(
     violations_list, _ = repo.list_violations(limit=100000)
 
     total_vehicles = len(events)
-    compliant_vehicles = sum(1 for e in events if e.decision == "COMPLIANCE")
-    violations_count = sum(1 for e in events if e.decision == "VIOLATION")
-    needs_review = sum(1 for e in events if e.decision == "NEEDS_REVIEW")
+    compliant_vehicles = sum(1 for e in events if e.result in ("HELMET", "SEATBELT"))
+    violations_count = sum(1 for e in events if e.result in ("NO_HELMET", "NO_SEATBELT"))
+    needs_review = sum(1 for e in events if e.result == "NEEDS_REVIEW")
 
     reviewed_count = sum(1 for v in violations_list if v.review_status == "REVIEWED")
     unreviewed_count = sum(1 for v in violations_list if v.review_status == "UNREVIEWED")
@@ -59,11 +59,11 @@ def get_daily_stats(
     for e in events:
         day = e.created_at[:10] if len(e.created_at) >= 10 else "unknown"
         daily_groups[day]["total"] += 1
-        if e.decision == "COMPLIANCE":
+        if e.result in ("HELMET", "SEATBELT"):
             daily_groups[day]["compliant"] += 1
-        elif e.decision == "VIOLATION":
+        elif e.result in ("NO_HELMET", "NO_SEATBELT"):
             daily_groups[day]["violations"] += 1
-        elif e.decision == "NEEDS_REVIEW":
+        elif e.result == "NEEDS_REVIEW":
             daily_groups[day]["needs_review"] += 1
 
     stats = []
@@ -92,11 +92,11 @@ def get_camera_stats(
     for e in events:
         cid = e.camera_id
         cam_groups[cid]["total"] += 1
-        if e.decision == "COMPLIANCE":
+        if e.result in ("HELMET", "SEATBELT"):
             cam_groups[cid]["compliant"] += 1
-        elif e.decision == "VIOLATION":
+        elif e.result in ("NO_HELMET", "NO_SEATBELT"):
             cam_groups[cid]["violations"] += 1
-        elif e.decision == "NEEDS_REVIEW":
+        elif e.result == "NEEDS_REVIEW":
             cam_groups[cid]["needs_review"] += 1
 
     stats = []

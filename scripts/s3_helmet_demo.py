@@ -9,7 +9,6 @@ from collections import Counter
 from pathlib import Path
 
 import cv2
-from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -149,6 +148,8 @@ def main() -> None:
     parser.add_argument("--no-show", action="store_true")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+    from ultralytics import YOLO
+
     vehicle_model, helmet_model = YOLO(str(args.vehicle_model)), YOLO(str(args.helmet_model))
     vehicle_names = vehicle_model.names
     if str(vehicle_names[0]).lower() != "person" or str(vehicle_names[3]).lower() != "motorcycle":

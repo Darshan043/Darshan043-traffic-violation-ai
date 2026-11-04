@@ -7,6 +7,8 @@ import io
 import logging
 import multiprocessing as mp
 from pathlib import Path
+import queue
+import threading
 import time
 import cv2
 from fastapi import status
@@ -22,11 +24,11 @@ from backend.app.db.json_repo import JsonFileRepository
 from backend.app.deps import _login_failures, set_repository
 from backend.app.main import app
 from backend.app.models.camera import Camera
-from backend.app.models.event import VehicleEvent
+from backend.app.models.event import VehicleEvent, result_from_pipeline
 from backend.app.models.user import User
 from backend.app.models.violation import Violation
 from backend.app.services.alert_service import alert_broadcaster
-from backend.app.services.engine_manager import engine_manager
+from backend.app.services.engine_manager import WorkerHandle, engine_manager
 
 
 @pytest.fixture(autouse=True)
@@ -534,6 +536,94 @@ def test_stats_summary_formula(client, clean_state):
     assert data["compliance_percentage"] == 80.0
 
 
+def test_pipeline_result_mapping_uses_repository_labels():
+    cases = (
+        ("COMPLIANCE", "helmet", "HELMET"),
+        ("VIOLATION", "no_helmet", "NO_HELMET"),
+        ("COMPLIANCE", "seatbelt", "SEATBELT"),
+        ("VIOLATION", "no_seatbelt", "NO_SEATBELT"),
+        ("NEEDS_REVIEW", "unclear", "NEEDS_REVIEW"),
+        ("NOT_CHECKED", "unclear", "NOT_CHECKED"),
+    )
+
+    for decision, ai_result, expected in cases:
+        event = VehicleEvent(
+            event_id=f"{decision}_{ai_result}",
+            camera_id="cam_labels",
+            track_id=1,
+            vehicle_type="motorcycle",
+            violation_type="helmet",
+            decision=decision,
+            ai_result=ai_result,
+        )
+        assert event.result == expected
+        assert event.model_dump()["result"] == expected
+        assert result_from_pipeline(decision, ai_result) == expected
+
+
+def test_no_helmet_pipeline_event_is_stored_as_a_violation(clean_state, monkeypatch):
+    broadcasts = []
+
+    def close_scheduled_coroutine(coroutine, _):
+        broadcasts.append(True)
+        coroutine.close()
+
+    monkeypatch.setattr(
+        "backend.app.services.engine_manager.asyncio.run_coroutine_threadsafe",
+        close_scheduled_coroutine,
+    )
+    engine_manager._record_event(
+        {
+            "event_id": "ev_no_helmet",
+            "camera_id": "cam_labels",
+            "track_id": 7,
+            "vehicle_type": "motorcycle",
+            "violation_type": "helmet",
+            "decision": "VIOLATION",
+            "ai_result": "no_helmet",
+            "confidence": 0.94,
+            "reason": "NO_HELMET",
+        },
+        clean_state,
+        None,
+    )
+
+    stored = clean_state.list_vehicle_events("cam_labels")
+    assert len(stored) == 1
+    assert stored[0].result == "NO_HELMET"
+    assert clean_state.get_violation("ev_no_helmet") is not None
+    assert broadcasts
+
+
+def test_review_events_are_excluded_from_compliance_percentage(client, clean_state):
+    viewer = clean_state.get_user_by_username("viewer")
+    for event_id, decision, ai_result in (
+        ("helmet_ok", "COMPLIANCE", "helmet"),
+        ("helmet_violation", "VIOLATION", "no_helmet"),
+        ("helmet_review", "NEEDS_REVIEW", "unclear"),
+    ):
+        clean_state.save_vehicle_event(VehicleEvent(
+            event_id=event_id,
+            camera_id="cam_labels",
+            track_id=1,
+            vehicle_type="motorcycle",
+            violation_type="helmet",
+            decision=decision,
+            ai_result=ai_result,
+        ))
+
+    response = client.get(
+        "/api/stats/summary",
+        headers={"Authorization": f"Bearer {_token_for(viewer)}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["compliant_vehicles"] == 1
+    assert response.json()["violations"] == 1
+    assert response.json()["needs_review"] == 1
+    assert response.json()["compliance_percentage"] == 50.0
+
+
 def test_stats_daily_and_cameras(client, clean_state):
     viewer = clean_state.get_user_by_username("viewer")
     token = _token_for(viewer)
@@ -642,6 +732,97 @@ def test_websocket_accepts_good_token(client, clean_state):
     with client.websocket_connect(f"/ws/alerts?token={token}") as ws:
         # Connected successfully
         assert ws is not None
+
+
+def test_websocket_receives_fake_engine_events_before_run_finishes(client, clean_state):
+    viewer = clean_state.get_user_by_username("viewer")
+    token = _token_for(viewer)
+    camera_id = "cam_live_alert"
+    clean_state.save_camera(Camera(camera_id=camera_id, name="Live Alert Camera"))
+    event_queue = queue.Queue()
+
+    class FakeProcess:
+        exitcode = 0
+
+        def __init__(self):
+            self.finished = threading.Event()
+
+        def is_alive(self):
+            return not self.finished.is_set()
+
+        def join(self, timeout=None):
+            self.finished.wait(timeout)
+
+    process = FakeProcess()
+    emitted_at = {}
+    run_finished_at = []
+
+    def fake_engine():
+        for frame_idx in range(30):
+            if frame_idx not in (10, 20):
+                continue
+            emitted_at[frame_idx] = time.monotonic()
+            event_queue.put({
+                "type": "event_candidate",
+                "data": {
+                    "event_id": f"ev_frame_{frame_idx}",
+                    "camera_id": camera_id,
+                    "track_id": 1,
+                    "vehicle_type": "motorcycle",
+                    "violation_type": "helmet",
+                    "decision": "VIOLATION",
+                    "ai_result": "no_helmet",
+                    "confidence": 0.9,
+                    "reason": "NO_HELMET",
+                    "frame_idx": frame_idx,
+                },
+            })
+            if frame_idx == 10:
+                time.sleep(0.5)
+        time.sleep(0.5)
+        run_finished_at.append(time.monotonic())
+        event_queue.put({"type": "finished", "camera_id": camera_id})
+        process.finished.set()
+
+    with client:
+        with client.websocket_connect(f"/ws/alerts?token={token}") as websocket:
+            loop = client.portal.call(asyncio.get_running_loop)
+            worker_handle = WorkerHandle(
+                camera_id,
+                process,
+                queue.Queue(),
+                event_queue,
+                threading.Event(),
+            )
+            listener = threading.Thread(
+                target=engine_manager._event_listener,
+                args=(worker_handle, clean_state, loop),
+            )
+            engine = threading.Thread(target=fake_engine)
+            listener.start()
+            engine.start()
+
+            alerts = []
+            finished_received_at = None
+            while finished_received_at is None:
+                message = websocket.receive_json()
+                received_at = time.monotonic()
+                if message.get("type") == "violation":
+                    alerts.append((message["event"]["event_id"], received_at))
+                elif message.get("type") == "event_candidate":
+                    alerts.append((message["event"]["event_id"], received_at))
+                elif message.get("type") == "finished":
+                    finished_received_at = received_at
+
+            engine.join(timeout=5)
+            listener.join(timeout=5)
+
+    assert not engine.is_alive()
+    assert not listener.is_alive()
+    assert [alert[0] for alert in alerts] == ["ev_frame_10", "ev_frame_20"]
+    assert alerts[0][1] < run_finished_at[0]
+    assert run_finished_at[0] <= finished_received_at
+    assert set(emitted_at) == {10, 20}
 
 
 # ==========================================

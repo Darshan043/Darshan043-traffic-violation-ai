@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+import pipeline as pipeline_module
 from ai_engine.association import Box, HeadDetection, HelmetResult
 from ai_engine.config import load_config
 from ai_engine.detector import HelmetAnalysis
@@ -137,6 +138,57 @@ def test_pipeline_live_events_and_annotated_frame(tmp_path):
     first_idx, first_jpeg = annotated_frames[0]
     assert isinstance(first_jpeg, bytes)
     assert first_jpeg.startswith(b"\xff\xd8")
+
+
+def test_pipeline_live_events_match_offline_duplicate_winner(tmp_path, monkeypatch):
+    source = tmp_path / "events.mp4"
+    source.touch()
+    config = load_config({
+        "camera": {
+            "id": "cam_live_parity",
+            "zone": [0.0, 0.9, 1.0, 0.9],
+            "check_helmet": True,
+            "check_seatbelt": False,
+        },
+        "paths": {"evidence_dir": str(tmp_path / "evidence")},
+    })
+    raw_events = [
+        {
+            "event_id": "review_36", "camera_id": "cam", "vehicle_type": "motorcycle",
+            "timestamp_sec": 1.50, "frame_idx": 36, "observations": 2,
+            "decision": "NEEDS_REVIEW", "vehicle_box": [316, 253, 475, 612],
+        },
+        {
+            "event_id": "helmet_68", "camera_id": "cam", "vehicle_type": "motorcycle",
+            "timestamp_sec": 2.84, "frame_idx": 68, "observations": 69,
+            "decision": "COMPLIANCE", "vehicle_box": [278, 239, 530, 613],
+        },
+        {
+            "event_id": "review_88", "camera_id": "cam", "vehicle_type": "motorcycle",
+            "timestamp_sec": 3.67, "frame_idx": 88, "observations": 1,
+            "decision": "NEEDS_REVIEW", "vehicle_box": [188, 243, 490, 659],
+        },
+    ]
+
+    def fake_process(_, __, on_event, **___):
+        for event in raw_events:
+            on_event(event)
+        return raw_events
+
+    monkeypatch.setattr(pipeline_module, "process_motorcycles", fake_process)
+    candidates = []
+    final_events = run_pipeline(
+        source,
+        config,
+        mode="helmet",
+        live=True,
+        on_event=candidates.append,
+    )
+
+    assert [event["event_id"] for event in candidates] == [
+        "review_36", "helmet_68", "review_88",
+    ]
+    assert [event["event_id"] for event in final_events] == ["helmet_68"]
 
 
 def test_pipeline_stop_event(tmp_path):

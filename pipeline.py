@@ -152,21 +152,14 @@ def run_pipeline(
               "car tracking remains active.")
 
     events: list[dict[str, Any]] = []
-    incremental_suppressor = IncrementalDuplicateSuppressor() if live else None
+    live_events: list[dict[str, Any]] = []
     last_annotated_time = 0.0
     min_frame_interval = 1.0 / max(0.1, max_annotated_fps)
 
     def live_event_handler(event: dict[str, Any]) -> None:
-        if incremental_suppressor is not None:
-            is_kept, processed = incremental_suppressor.process(event)
-            if is_kept:
-                if on_event is not None:
-                    on_event(processed)
-            else:
-                if on_suppressed is not None:
-                    on_suppressed(processed)
-        else:
-            events.append(event)
+        live_events.append(event)
+        if on_event is not None:
+            on_event(event)
 
     for selected_mode in modes:
         if stop_event is not None and stop_event.is_set():
@@ -238,8 +231,11 @@ def run_pipeline(
             events.extend(selected_events[len(events):])
 
     if live:
-        assert incremental_suppressor is not None
-        return sorted(incremental_suppressor.kept, key=lambda event: (event.get("frame_idx", 0), event.get("vehicle_class", "")))
+        kept, suppressed = suppress_duplicate_events(live_events)
+        if on_suppressed is not None:
+            for event in suppressed:
+                on_suppressed(event)
+        return kept
 
     kept, suppressed = suppress_duplicate_events(events)
     if on_event is not None:

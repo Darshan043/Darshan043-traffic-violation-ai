@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import multiprocessing as mp
+import os
 from pathlib import Path
 import queue
 import threading
@@ -73,11 +74,15 @@ def camera_worker_process(
                 "motorcycle_view": camera_data.get("motorcycle_view", "approaching"),
                 "check_helmet": has_helmet,
                 "check_seatbelt": has_seatbelt,
+                # Match the CLI defaults so API and CLI runs make equivalent decisions.
+                "observe_distance": 400.0,
+                "observe_every": 1,
+                "device": os.environ.get("TRAFFIC_AI_DEVICE"),
             },
             "paths": {"evidence_dir": evidence_dir},
         })
 
-        def handle_annotated_frame(jpeg_bytes: bytes, frame_idx: int) -> None:
+        def handle_annotated_frame(jpeg_bytes: bytes, _: int) -> None:
             try:
                 if frame_queue.full():
                     try:
@@ -90,12 +95,12 @@ def camera_worker_process(
 
         def handle_event(event: dict[str, Any]) -> None:
             try:
-                event_queue.put_nowait({"type": "event", "data": event})
+                event_queue.put_nowait({"type": "event_candidate", "data": event})
             except Exception:
                 pass
 
         source = camera_data.get("source_path", "")
-        run_pipeline(
+        events = run_pipeline(
             source=source,
             config=config,
             mode=mode,
@@ -104,6 +109,7 @@ def camera_worker_process(
             on_event=handle_event,
             on_annotated_frame=handle_annotated_frame,
         )
+        event_queue.put({"type": "events_complete", "events": events})
         event_queue.put({"type": "finished", "camera_id": camera_id})
     except Exception as exc:
         import traceback
@@ -264,9 +270,12 @@ class EngineManager:
                 continue
 
             msg_type = msg.get("type")
-            if msg_type == "event":
+            if msg_type == "event_candidate":
                 event_data = msg.get("data", {})
-                self._record_event(event_data, repo, loop)
+                self._broadcast_candidate(event_data, loop)
+            elif msg_type == "events_complete":
+                for event_data in msg.get("events", []):
+                    self._record_event(event_data, repo, loop)
             elif msg_type == "finished":
                 logger.info("Video processing finished for camera %s", camera_id)
                 repo.update_camera(camera_id, {"status": "offline"})
@@ -371,6 +380,22 @@ class EngineManager:
                 }),
                 loop,
             )
+
+    def _broadcast_candidate(
+        self,
+        event: dict[str, Any],
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        if event.get("decision") not in ("VIOLATION", "NEEDS_REVIEW"):
+            return
+        asyncio.run_coroutine_threadsafe(
+            alert_broadcaster.broadcast({
+                "type": "event_candidate",
+                "event": event,
+                "provisional": True,
+            }),
+            loop,
+        )
 
 
 engine_manager = EngineManager()

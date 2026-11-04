@@ -114,6 +114,7 @@ def load_config(data: dict | None = None) -> EngineConfig:
         helmet_conf=float(camera_raw.get("helmet_conf", 0.40)),
         seatbelt_conf=float(camera_raw.get("seatbelt_conf", 0.40)),
         imgsz=int(camera_raw.get("imgsz", 640)),
+        device=None if camera_raw.get("device") is None else str(camera_raw["device"]),
     )
     if camera.frame_skip < 1:
         raise ValueError("frame_skip must be at least 1")

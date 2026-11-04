@@ -10,7 +10,6 @@ from pathlib import Path
 import sys
 
 import cv2
-from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -19,6 +18,14 @@ if str(ROOT) not in sys.path:
 from ai_engine.tracking import TrackStore, results_to_tracks
 
 VEHICLE_CLASSES = [2, 3, 5, 7]
+YOLO = None
+
+
+def _load_model(model_path: Path):
+    model_factory = YOLO
+    if model_factory is None:
+        from ultralytics import YOLO as model_factory
+    return model_factory(str(model_path))
 
 
 def main() -> None:
@@ -70,7 +77,7 @@ def main() -> None:
             raise OSError(f"Could not create output video: {out_video}")
 
     # A new model per invocation resets tracker memory and ID allocation for each video/run.
-    model = YOLO(str(args.model))
+    model = _load_model(args.model)
     print(f"Run config: video={args.video}; tracker={args.tracker}; model={args.model}; "
           f"frames=[{start_frame},{end_frame if end_frame is not None else 'EOF'}); "
           f"conf={args.conf}; imgsz={args.imgsz}; skip={args.skip}; classes={VEHICLE_CLASSES}; "

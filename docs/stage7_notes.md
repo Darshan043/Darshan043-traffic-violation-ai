@@ -83,17 +83,19 @@ Open `http://localhost:8000/docs` for the interactive Swagger UI.
 
 ### 3 — Run unit tests (no real models)
 ```powershell
-.\.venv\Scripts\python.exe -m pytest          # 128 tests, ~24 s
+.\.venv\Scripts\python.exe -m pytest          # 133 passed; no Torch/Ultralytics import
 ```
 
-### 4 — Run integration test (real video, server must be running)
+### 4 — Run the complete Stage 7 smoke check
 ```powershell
-# Terminal A — start backend
-.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-
-# Terminal B — run integration test
-.\.venv\Scripts\python.exe -m pytest tests\integration\ -m integration -s -v
+$env:S7_SMOKE_PASSWORD = Read-Host "Temporary test password"
+.\.venv\Scripts\python.exe scripts\s7_smoke.py
+Remove-Item Env:\S7_SMOKE_PASSWORD
 ```
+
+The script runs a CLI baseline first, then starts an isolated temporary backend
+store on port 8000. It attempts CUDA and uses CPU only if CUDA fails. The
+password must be provided in the environment and is never written to a file.
 
 ---
 
@@ -116,7 +118,7 @@ Copy `.env.example` → `.env` and fill in `SECRET_KEY`.
 
 - **Single-pass helmet+seatbelt loop**: when both checks are selected the pipeline runs helmet then seatbelt as two sequential passes (see `docs/known_issues.md`). A true dual-class single pass is planned.
 - **MAX_WORKERS=1**: the 4 GB GPU cannot run two YOLO models simultaneously without OOM. A second `start` returns HTTP 409.
-- **CUDA OOM after pytest**: running pytest loads PyTorch into the CUDA context; starting a video immediately after can crash with `CUDA error: unknown error`. Always run video jobs in a fresh process (or set `CUDA_VISIBLE_DEVICES=-1` for CPU-only inference).
+- **Test isolation**: the default pytest suite uses fake detectors and asserts at teardown that Torch and Ultralytics were not imported and CUDA was not initialized. Run video inference in a separate process from pytest.
 - **Windows spawn safety**: the multiprocessing worker uses `spawn` context; the pipeline worker function lives in an importable module with no model load at import time and `if __name__ == "__main__"` guards.
 - **RTSP passwords** are never logged or returned in API responses.
 - **Token query parameter** in URLs is redacted in every log line by `SensitiveDataRedactionFilter`.
@@ -154,3 +156,49 @@ JSON   : storage/cli_events.json
 | Stop event | `pipeline.py`, `helmet_pipeline.py`, `seatbelt_pipeline.py` | `threading.Event` checked every frame |
 | Pass indicator overlay | `pipeline.py` | "Pass 1/2: helmet" text drawn on each frame |
 | `device` config | `ai_engine/config/engine.py`, `ai_engine/detector.py` | `CameraConfig.device` passed to YOLO `.to()` |
+
+## Result labels
+
+| Pipeline `decision` | Pipeline `ai_result` | Stored `vehicle_events.result` |
+|---|---|---|
+| `COMPLIANCE` | `helmet` | `HELMET` |
+| `VIOLATION` | `no_helmet` | `NO_HELMET` |
+| `COMPLIANCE` | `seatbelt` | `SEATBELT` |
+| `VIOLATION` | `no_seatbelt` | `NO_SEATBELT` |
+| `NEEDS_REVIEW` | any result | `NEEDS_REVIEW` |
+| any other or inconsistent pair | any result | `NOT_CHECKED` |
+
+Compliance percentage is calculated from `HELMET` + `SEATBELT` versus
+`NO_HELMET` + `NO_SEATBELT`; `NEEDS_REVIEW` is reported separately and is
+excluded from that percentage.
+
+## Stage 7 verification results (2026-11-04)
+
+- Default suite: **133 passed, 1 deselected**. Peak pytest RSS was **164.3 MiB**;
+  Torch and Ultralytics were absent after the suite, and CUDA was not initialized.
+- The earlier report of roughly 12 GB usage/GPU retention was not reproduced.
+  At initial inspection no project Python/Uvicorn process was running and only
+  1.46 GB system RAM was free; the pre-fix suite imported Torch but reported
+  `torch.cuda.is_initialized() == False`. The exact source of earlier system-wide
+  memory use cannot be determined from the current run.
+- Cause of pytest model imports: `ai_engine.seatbelt_pipeline` and helper-only
+  scripts imported Ultralytics at module scope. Model imports are now lazy, and
+  the default suite has an end-of-session guard against importing Torch or
+  Ultralytics.
+- Real API smoke: **42 checks passed** using **CUDA (`cuda:0`)** and temporary
+  backend storage. A same-device CLI baseline was run before Uvicorn; both CLI
+  and API stored one `HELMET` event.
+- Live MJPEG: 10 frames fetched; 3 saved under ignored
+  `data/output/s7_stream/`.
+- WebSocket: first provisional event at
+  `2026-11-04T13:42:22.840506Z`; video finished at
+  `2026-11-04T13:42:31.878159Z` (about 9.0 seconds later).
+- Stop/worker memory check: the second run stopped in **3.19 seconds**; worker
+  RSS went from **1423.7 MiB to 0 MiB** after exit. A second camera start while
+  a worker was active returned **409**.
+- Token checks: no JWT appeared in the temporary storage logs or Uvicorn output;
+  access logs contained `token=REDACTED`.
+- Live notifications are provisional candidates, emitted as soon as the engine
+  finalizes each observation. Persisted vehicle events are reconciled at run
+  completion with the same observation-ranked duplicate suppression as the CLI,
+  so live delivery does not change final statistics or event history.

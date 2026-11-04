@@ -9,7 +9,6 @@ import statistics
 import sys
 
 import cv2
-from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -62,6 +61,8 @@ def analyze_video(video: Path, output_dir: Path) -> dict:
         raise OSError(f"Video has no decodable first frame: {video}")
 
     config = load_config()
+    from ultralytics import YOLO
+
     model = YOLO(str(config.paths.vehicle_model))
     records: dict[int, dict] = {}
     capture = cv2.VideoCapture(str(video))

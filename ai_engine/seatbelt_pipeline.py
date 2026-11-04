@@ -23,11 +23,6 @@ from ai_engine.tracking import Track, results_to_tracks
 from ai_engine.video_source import VideoSource
 from ai_engine.zone import Zone
 
-try:
-    from ultralytics import YOLO
-except Exception:  # pragma: no cover - only for import-time safety in minimal envs
-    YOLO = None
-
 
 @dataclass(frozen=True)
 class SeatbeltAnalysis:
@@ -45,10 +40,14 @@ class SeatbeltDetector:
 
     def __init__(self, config: EngineConfig, vehicle_model=None, seatbelt_model=None) -> None:
         self.config = config
-        if YOLO is None:
-            raise RuntimeError("ultralytics is required for the seatbelt pipeline")
-        self.vehicle_model = vehicle_model if vehicle_model is not None else YOLO(str(config.paths.vehicle_model))
-        self.seatbelt_model = seatbelt_model if seatbelt_model is not None else YOLO(str(config.paths.seatbelt_model))
+        if vehicle_model is None or seatbelt_model is None:
+            from ultralytics import YOLO
+            if vehicle_model is None:
+                vehicle_model = YOLO(str(config.paths.vehicle_model))
+            if seatbelt_model is None:
+                seatbelt_model = YOLO(str(config.paths.seatbelt_model))
+        self.vehicle_model = vehicle_model
+        self.seatbelt_model = seatbelt_model
         if getattr(self.config.camera, "device", None):
             self.vehicle_model.to(self.config.camera.device)
             self.seatbelt_model.to(self.config.camera.device)
