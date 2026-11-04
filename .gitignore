@@ -26,6 +26,8 @@ datasets/helmet/
 !storage/
 !storage/evidence/
 !storage/evidence/.gitkeep
+storage/evidence/*
+!storage/evidence/.gitkeep
 !storage/uploads/
 !storage/uploads/.gitkeep
 !storage/logs/

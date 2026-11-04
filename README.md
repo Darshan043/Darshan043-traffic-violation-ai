@@ -64,3 +64,26 @@ Use the project virtual-environment Python directly from PowerShell:
 The demo assumes the driver's seat is on the right, as in India. It draws green `SEATBELT`,
 red `NO SEATBELT`, and yellow `UNCLEAR` labels. Read [the Stage 4 notes](docs/stage4_notes.md)
 and [the model card](models/seatbelt/README.md) before interpreting results.
+
+## How to run Stage 5
+
+Track COCO vehicles (car, motorcycle, bus, and truck) with the selected Experiment 3 BoT-SORT
+configuration. Run from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\test_road.mp4 --save --no-show --csv
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\helmet_test.mp4 --tracker ai_engine\config\botsort_conf_test.yaml --save --no-show --csv
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\test_road.mp4 --tracker ai_engine\config\botsort_default.yaml --save --no-show --csv
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\test_road.mp4 --tracker botsort.yaml --save --no-show --csv
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\test_road.mp4 --tracker bytetrack.yaml --save --no-show --csv
+.\.venv\Scripts\python.exe scripts\s5_track.py --video data\videos\test_road.mp4 --start-sec 0 --end-sec 20 --scale 0.75 --label-scale 1.3 --box-thickness 4 --trail-thickness 3 --out data\output\s5_id_check.mp4 --save --no-show --csv data\output\s5_id_check.csv
+.\.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+```
+
+The selected configuration is `ai_engine/config/botsort_conf_test.yaml`; `botsort_default.yaml`,
+`botsort_fixed_camera.yaml`, the ReID comparison and `bytetrack.yaml` are available for comparison.
+`--csv` writes one row per track (ID, majority-vote class, first/last frame, observed frames, and
+mean confidence). Use `--tracker PATH` to choose another YAML. `--start-sec` and `--end-sec` select
+a reproducible video window. Larger label/box/trail options change only the inspection view, not
+detection or association settings. See [Stage 5 notes](docs/stage5_notes.md) for the measured
+comparisons, limitations, crop experiment, and interpretation guidance.
