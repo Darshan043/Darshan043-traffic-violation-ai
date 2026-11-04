@@ -78,6 +78,9 @@ def process_motorcycles(
     *,
     detector: HelmetDetector | None = None,
     on_frame: Callable[[int, Any], None] | None = None,
+    on_transfer: Callable[[dict[str, Any]], None] | None = None,
+    on_crossing: Callable[[dict[str, Any]], None] | None = None,
+    on_track: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Process a video and emit one helmet decision per motorcycle zone crossing.
 
@@ -115,6 +118,18 @@ def process_motorcycles(
             )
             if old_track_id is not None:
                 zone.transfer(old_track_id, track.id)
+                if on_transfer is not None:
+                    on_transfer({
+                        "camera_id": camera.id,
+                        "vehicle_type": "motorcycle",
+                        "from_track_id": old_track_id,
+                        "to_track_id": track.id,
+                        "frame_idx": frame_idx,
+                        "anchor": track.anchor,
+                    })
+            if on_track is not None:
+                on_track({"camera_id": camera.id, "vehicle_type": "motorcycle",
+                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor})
             acc = memory.get(track.id, track.cls, frame_idx)
             acc.update_position(track.anchor, frame_idx, track.box)
             memory.remember_track(camera_id=camera.id, vehicle_class=track.cls,
@@ -132,6 +147,10 @@ def process_motorcycles(
             if zone.crossed(track.id, track.anchor):
                 crossings += 1
                 if acc.finalized:
+                    if on_crossing is not None:
+                        on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                     "vehicle_type": "motorcycle", "anchor": track.anchor,
+                                     "event_emitted": False, "reason": "ALREADY_FINALIZED"})
                     continue
                 label, reason = decide(acc.observations, kind, config.thresholds)
                 prior_result = label if memory.soft_duplicate(
@@ -143,18 +162,33 @@ def process_motorcycles(
                 ) else None
                 if prior_result is not None:
                     acc.finalized = True
+                    if on_crossing is not None:
+                        on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                     "vehicle_type": "motorcycle", "anchor": track.anchor,
+                                     "event_emitted": False, "reason": "SOFT_DUPLICATE"})
                     continue
+                raw_label = "no_helmet" if label == "VIOLATION" else "helmet" if label == "COMPLIANCE" else "unclear"
+                confidence_values = [
+                    float(getattr(item, "confidence", 0.0))
+                    for item in acc.observations
+                    if str(getattr(item, "reason", "OK")) == "OK"
+                ]
                 event = {
+                    "event_id": f"{camera.id}_f{frame_idx:06d}_t{track.id}_helmet",
                     "camera_id": camera.id,
                     "track_id": track.id,
                     "vehicle_class": "motorcycle",
+                    "vehicle_type": "motorcycle",
                     "violation_type": "helmet",
                     "decision": label,
+                    "ai_result": raw_label,
+                    "confidence": sum(confidence_values) / len(confidence_values) if confidence_values else 0.0,
                     "reason": reason,
                     "timestamp_sec": frame_idx / (source.fps or 25.0),
                     "frame_idx": frame_idx,
                     "observations": len(acc.observations),
                     "anchor": track.anchor,
+                    "transferred_from_id": acc.transferred_from_id,
                 }
                 best_analysis = acc.best_context if isinstance(acc.best_context, HelmetAnalysis) else None
                 evidence_frame = acc.best_frame if acc.best_frame is not None else frame
@@ -169,6 +203,10 @@ def process_motorcycles(
                 events.append(event)
                 print("Stage 6 event:", event)
                 on_event(event)
+                if on_crossing is not None:
+                    on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                 "vehicle_type": "motorcycle", "anchor": track.anchor,
+                                 "event_emitted": True, "event_id": event["event_id"]})
 
         for track_id, acc in list(memory._tracks.items()):
             if track_id in active:
@@ -186,17 +224,28 @@ def process_motorcycles(
                 ):
                     acc.finalized = True
                     continue
+                raw_label = "no_helmet" if label == "VIOLATION" else "helmet" if label == "COMPLIANCE" else "unclear"
+                confidence_values = [
+                    float(getattr(item, "confidence", 0.0))
+                    for item in acc.observations
+                    if str(getattr(item, "reason", "OK")) == "OK"
+                ]
                 event = {
+                    "event_id": f"{camera.id}_f{frame_idx:06d}_t{track_id}_helmet",
                     "camera_id": camera.id,
                     "track_id": track_id,
                     "vehicle_class": "motorcycle",
+                    "vehicle_type": "motorcycle",
                     "violation_type": "helmet",
                     "decision": label,
+                    "ai_result": raw_label,
+                    "confidence": sum(confidence_values) / len(confidence_values) if confidence_values else 0.0,
                     "reason": reason,
                     "timestamp_sec": frame_idx / (source.fps or 25.0),
                     "frame_idx": frame_idx,
                     "observations": len(acc.observations),
                     "anchor": acc.last_anchor,
+                    "transferred_from_id": acc.transferred_from_id,
                 }
                 evidence_frame = acc.best_frame if acc.best_frame is not None else frame
                 evidence_vehicle_box = acc.best_box if acc.best_box is not None else acc.last_box

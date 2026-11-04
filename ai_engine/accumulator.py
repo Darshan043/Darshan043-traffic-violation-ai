@@ -91,6 +91,7 @@ class TrackMemory:
     best_score: float = -1.0
     finalized: bool = False
     last_label: str | None = None
+    transferred_from_id: int | None = None
 
     def update_position(self, anchor: tuple[float, float], frame_idx: int, box: Box | None = None) -> None:
         self.last_anchor = anchor
@@ -219,6 +220,7 @@ class Accumulator:
 
         _, old_id, memory = candidates[0]
         del self._tracks[old_id]
+        memory.transferred_from_id = memory.transferred_from_id or old_id
         memory.track_id = track_id
         memory.update_position(anchor, frame_idx)
         self._tracks[track_id] = memory

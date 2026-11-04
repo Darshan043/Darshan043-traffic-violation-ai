@@ -162,6 +162,9 @@ def process_cars(
     *,
     detector: SeatbeltDetector | None = None,
     on_frame: Callable[[int, Any], None] | None = None,
+    on_transfer: Callable[[dict[str, Any]], None] | None = None,
+    on_crossing: Callable[[dict[str, Any]], None] | None = None,
+    on_track: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Process a video and emit one seatbelt decision per car zone crossing."""
     detector = detector or SeatbeltDetector(config)
@@ -196,6 +199,18 @@ def process_cars(
             )
             if old_track_id is not None:
                 zone.transfer(old_track_id, track.id)
+                if on_transfer is not None:
+                    on_transfer({
+                        "camera_id": camera.id,
+                        "vehicle_type": "car",
+                        "from_track_id": old_track_id,
+                        "to_track_id": track.id,
+                        "frame_idx": frame_idx,
+                        "anchor": track.anchor,
+                    })
+            if on_track is not None:
+                on_track({"camera_id": camera.id, "vehicle_type": "car",
+                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor})
             acc = memory.get(track.id, track.cls, frame_idx)
             acc.update_position(track.anchor, frame_idx, track.box)
             memory.remember_track(camera_id=camera.id, vehicle_class=track.cls,
@@ -211,6 +226,10 @@ def process_cars(
             if zone.crossed(track.id, track.anchor):
                 crossings += 1
                 if acc.finalized:
+                    if on_crossing is not None:
+                        on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                     "vehicle_type": "car", "anchor": track.anchor,
+                                     "event_emitted": False, "reason": "ALREADY_FINALIZED"})
                     continue
                 label, reason = decide(acc.observations, kind_of(track.cls), config.thresholds)
                 if memory.soft_duplicate(
@@ -221,18 +240,33 @@ def process_cars(
                     previous_result=label,
                 ):
                     acc.finalized = True
+                    if on_crossing is not None:
+                        on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                     "vehicle_type": "car", "anchor": track.anchor,
+                                     "event_emitted": False, "reason": "SOFT_DUPLICATE"})
                     continue
+                raw_label = "no_seatbelt" if label == "VIOLATION" else "seatbelt" if label == "COMPLIANCE" else "unclear"
+                confidence_values = [
+                    float(getattr(item, "confidence", 0.0))
+                    for item in acc.observations
+                    if str(getattr(item, "reason", "OK")) == "OK"
+                ]
                 event = {
+                    "event_id": f"{camera.id}_f{frame_idx:06d}_t{track.id}_seatbelt",
                     "camera_id": camera.id,
                     "track_id": track.id,
                     "vehicle_class": "car",
+                    "vehicle_type": "car",
                     "violation_type": "seatbelt",
                     "decision": label,
+                    "ai_result": raw_label,
+                    "confidence": sum(confidence_values) / len(confidence_values) if confidence_values else 0.0,
                     "reason": reason,
                     "timestamp_sec": frame_idx / (source.fps or 25.0),
                     "frame_idx": frame_idx,
                     "observations": len(acc.observations),
                     "anchor": track.anchor,
+                    "transferred_from_id": acc.transferred_from_id,
                 }
                 best_frame = acc.best_frame if acc.best_frame is not None else frame
                 best_box = acc.best_box if acc.best_box is not None else track.box
@@ -247,6 +281,10 @@ def process_cars(
                 events.append(event)
                 print("Stage 6 seatbelt event:", event)
                 on_event(event)
+                if on_crossing is not None:
+                    on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                 "vehicle_type": "car", "anchor": track.anchor,
+                                 "event_emitted": True, "event_id": event["event_id"]})
 
         for track_id, acc in list(memory._tracks.items()):
             if track_id in active:
@@ -264,17 +302,28 @@ def process_cars(
                 ):
                     acc.finalized = True
                     continue
+                raw_label = "no_seatbelt" if label == "VIOLATION" else "seatbelt" if label == "COMPLIANCE" else "unclear"
+                confidence_values = [
+                    float(getattr(item, "confidence", 0.0))
+                    for item in acc.observations
+                    if str(getattr(item, "reason", "OK")) == "OK"
+                ]
                 event = {
+                    "event_id": f"{camera.id}_f{frame_idx:06d}_t{track_id}_seatbelt",
                     "camera_id": camera.id,
                     "track_id": track_id,
                     "vehicle_class": "car",
+                    "vehicle_type": "car",
                     "violation_type": "seatbelt",
                     "decision": label,
+                    "ai_result": raw_label,
+                    "confidence": sum(confidence_values) / len(confidence_values) if confidence_values else 0.0,
                     "reason": reason,
                     "timestamp_sec": frame_idx / (source.fps or 25.0),
                     "frame_idx": frame_idx,
                     "observations": len(acc.observations),
                     "anchor": acc.last_anchor,
+                    "transferred_from_id": acc.transferred_from_id,
                 }
                 best_frame = acc.best_frame if acc.best_frame is not None else frame
                 best_box = acc.best_box if acc.best_box is not None else acc.last_box

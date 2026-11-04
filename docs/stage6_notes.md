@@ -141,12 +141,87 @@ known limitations on road-video crops.
 
 ### Remaining verification / limitations
 
-- The full reviewed 20-crossing / three-video check is not complete.
 - Only `helmet_test.mp4` and `test_road.mp4` are available;
   `track_test3.mp4` remains unavailable.
-- The real-video tests were bounded smoke runs, not a manual identity ground
-  truth review. Stage 6 should not be declared operationally closed until the
-  remaining review is performed with the missing/required footage.
-- Tracker ID observation transfer and honoring the lost-track grace period are
-  also still required before Step 6 can be considered fully complete. They were
-  documented, not changed as part of this Step 8 task.
+- The video run below is an automated pipeline validation, not a ground-truth
+  identity evaluation. Manual review is still required before Stage 6 can be
+  considered fully validated.
+- Tracker ID observation transfer and the configured lost-track grace period
+  are implemented and covered by tests. They do not eliminate the risk of
+  mistakenly merging two nearby vehicles.
+
+## Final validation run
+
+The full engine was run in both helmet and seatbelt modes on each available
+video. The validation explicitly used a normalized zone line at `y=0.90`.
+Unique vehicle counts are the number of distinct tracker IDs seen by the
+respective mode; observation counts are per-frame detections.
+
+| Video | Frames / FPS | Unique vehicles (motorcycle + car) | Events (HELMET / NO_HELMET / SEATBELT / NO_SEATBELT / NEEDS_REVIEW) | Reason codes | ID transfers | Crossings without event |
+|---|---:|---:|---|---|---:|---:|
+| `helmet_test.mp4` | 240 / 23.976 | 5 (3 + 2) | 1 / 0 / 0 / 0 / 2 | TOO_FEW_OBSERVATIONS 2; CLEAR_COMPLIANCE 1 | 0 | 0 |
+| `test_road.mp4` | 2,858 / 50.000 | 219 (8 + 211) | 0 / 0 / 0 / 7 / 17 | TOO_FEW_OBSERVATIONS 3; CONFLICTING_OBSERVATIONS 3; CLEAR_VIOLATION 7; UNCLEAR_OBSERVATIONS 11 | 39 | 0 |
+
+Across both videos there were 27 events: 1 `HELMET`, 7 `NO_SEATBELT`, and
+19 `NEEDS_REVIEW`. The review-needed rate was **70.37% (19/27)**. Reason totals
+were `TOO_FEW_OBSERVATIONS` 5, `CLEAR_COMPLIANCE` 1,
+`CONFLICTING_OBSERVATIONS` 3, `CLEAR_VIOLATION` 7, and
+`UNCLEAR_OBSERVATIONS` 11.
+
+The review pack is generated under the ignored
+`data/output/s6_review/` folder. `review_sheet.csv` has 27 event rows and the
+four requested empty reviewer fields. It is accompanied by `index.html`,
+`run_report.json`, `id_transfers.csv` (all 39 transfers as separate rows), and
+`crossings_without_event.csv` (header only; no such crossings were recorded).
+Each current sheet row has a full-frame and crop image. There are 54 images
+linked from the 27 rows; four unlinked image copies from an earlier validation
+run are retained in the folder.
+
+The automated likely-duplicate heuristic used same camera and vehicle type,
+at most 2 seconds apart, and box IoU above 0.5. It flagged six pairs:
+
+| Video | Event pair | IoU |
+|---|---|---:|
+| `helmet_test.mp4` | `helmet_test_f000036_t2_helmet` / `helmet_test_f000068_t1_helmet` | 0.605 |
+| `helmet_test.mp4` | `helmet_test_f000068_t1_helmet` / `helmet_test_f000088_t3_helmet` | 0.555 |
+| `test_road.mp4` | `test_road_f000157_t2_seatbelt` / `test_road_f000231_t25_seatbelt` | 0.538 |
+| `test_road.mp4` | `test_road_f000711_t50_seatbelt` / `test_road_f000711_t42_seatbelt` | 0.515 |
+| `test_road.mp4` | `test_road_f000813_t60_seatbelt` / `test_road_f000889_t67_seatbelt` | 0.788 |
+| `test_road.mp4` | `test_road_f001841_t167_seatbelt` / `test_road_f001915_t170_seatbelt` | 0.669 |
+
+This is a screening heuristic, not proof that the events are duplicates.
+
+Six evidence crops were visually checked. The three motorcycle crops show
+helmeted riders; two were nevertheless marked `NEEDS_REVIEW` because they had
+too few observations. The three car crops show small/distant side or rear
+views, and a seatbelt cannot be confirmed visually; the `NO_SEATBELT` output
+is therefore unverified. `test_road.mp4` contains no large front-facing cars,
+so it cannot validate the seatbelt detector on a clear driver view.
+
+Latest full regression command:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+```
+
+Result: **78 passed in 18.44s**.
+
+## Seeded detector-output dropout stress test
+
+The helmet and seatbelt pipelines were run on `test_road.mp4` with a
+deterministic wrapper that hid selected tracker outputs in memory; no pipeline
+source or configuration was changed. After a track had appeared in 18 frames,
+the seeded selector gave it a 22% chance of one blackout window of 10–30
+frames. The run selected 21 track IDs. **18 returned with the same tracker ID
+and existing accumulator key; 3 were not seen again before the clip ended.**
+There were **0 duplicate events** in selected track lineages. The stress run
+reported 39 tracker ID transfers overall, but none was counted as recovery of
+one of the selected tracks.
+
+The requested blackout windows were 10–30 frames, but the source detector
+already omitted some IDs on some frames, so the wrapper actually suppressed
+fewer than the requested number of detections for several selected tracks.
+“Not seen again” means not reacquired by the end of this clip; it does not prove
+the injected blackout alone caused the loss. This is a controlled software
+stress test, not a real-world tracking accuracy measurement. Full per-track
+window data is in the ignored `data/output/s6_stress/stress_report.json`.

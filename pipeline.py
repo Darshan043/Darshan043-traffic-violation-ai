@@ -19,6 +19,9 @@ def run_pipeline(
     mode: PipelineMode = "both",
     on_event: Callable[[dict[str, Any]], None] | None = None,
     on_frame: Callable[[str, int, Any], None] | None = None,
+    on_transfer: Callable[[dict[str, Any]], None] | None = None,
+    on_crossing: Callable[[dict[str, Any]], None] | None = None,
+    on_track: Callable[[dict[str, Any]], None] | None = None,
     helmet_detector=None,
     seatbelt_detector=None,
 ) -> list[dict[str, Any]]:
@@ -75,6 +78,9 @@ def run_pipeline(
                 on_event,
                 detector=helmet_detector,
                 on_frame=frame_callback if on_frame is not None else None,
+                on_transfer=on_transfer,
+                on_crossing=on_crossing,
+                on_track=on_track,
             )
         else:
             selected_events = process_cars(
@@ -83,6 +89,9 @@ def run_pipeline(
                 on_event,
                 detector=seatbelt_detector,
                 on_frame=frame_callback if on_frame is not None else None,
+                on_transfer=on_transfer,
+                on_crossing=on_crossing,
+                on_track=on_track,
             )
         events.extend(selected_events)
 
