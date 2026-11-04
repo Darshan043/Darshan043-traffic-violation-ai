@@ -40,7 +40,7 @@ class HeadDetection:
 class HelmetResult:
     label: Literal["helmet", "no_helmet", "unclear"]
     confidence: float
-    reason: Literal["OK", "NO_RIDER", "DRIVER_UNCLEAR", "NO_HEAD"]
+    reason: Literal["OK", "NO_RIDER", "DRIVER_UNCLEAR", "NO_HEAD", "TOO_SMALL"]
 
 
 def riders_for_motorcycle(moto_box: Box, person_boxes: Iterable[Box]) -> list[Box]:

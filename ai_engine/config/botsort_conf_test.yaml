@@ -1,0 +1,17 @@
+# Traffic-oriented BoT-SORT config based on installed Ultralytics 8.4.197 defaults.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.35
+track_buffer: 60
+match_thresh: 0.8
+fuse_score: True
+
+# Global motion compensation. Useful for moving cameras, but may be noisy with shake.
+gmc_method: None
+
+# ReID remains off in the standard traffic config to avoid extra appearance compute.
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto

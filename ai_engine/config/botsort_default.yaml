@@ -1,0 +1,18 @@
+# Installed Ultralytics 8.4.197 BoT-SORT defaults, copied for comparison.
+# Source: ultralytics/cfg/trackers/botsort.yaml
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True
+
+# Global motion compensation. Useful for moving cameras, but may be noisy with shake.
+gmc_method: sparseOptFlow
+
+# Appearance/ReID settings. ReID is off by default and may need an extra model.
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto
