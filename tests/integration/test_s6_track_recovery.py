@@ -126,7 +126,7 @@ class _ScriptedDetector:
 
     def seatbelt_observation(self, frame, track):
         return SeatbeltAnalysis(
-            track, SeatbeltResult("no_seatbelt", 0.9, "OK"),
+            track, SeatbeltResult("no_seatbelt", 0.9, "OK", 300),
             Box(track.box.x1, track.box.y1, track.box.x2, track.box.y1 + 12),
             track.box, (),
         )
@@ -143,6 +143,7 @@ def _run(mode: str, video: Path, evidence: Path, sequence: list[tuple[int, float
             "lost_near_distance": 20,
             "check_helmet": mode == "helmet",
             "check_seatbelt": mode == "seatbelt",
+            "camera_view": "front" if mode == "seatbelt" else "unknown",
         },
         "paths": {"evidence_dir": str(evidence)},
         "lost_grace_frames": grace,

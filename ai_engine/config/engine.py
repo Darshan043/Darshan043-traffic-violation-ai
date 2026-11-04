@@ -47,7 +47,8 @@ class CameraConfig:
     id: str = "cam1"
     check_helmet: bool = True
     check_seatbelt: bool = False
-    camera_view: str = "approaching"
+    camera_view: str = "unknown"
+    motorcycle_view: str = "approaching"
     driver_side: str = "right"
     min_car_height: float = 120.0
     frame_skip: int = 1
@@ -78,6 +79,8 @@ class EngineConfig:
     paths: PathConfig = field(default_factory=PathConfig)
     accumulator_max_age: int = 120
     lost_grace_frames: int = 15
+    transfer_time_gap: int = 15
+    transfer_position_gap: float = 80.0
     start_sec: float = 0.0
     end_sec: float | None = None
 
@@ -86,13 +89,18 @@ def load_config(data: dict | None = None) -> EngineConfig:
     """Build an EngineConfig from a nested dictionary. Missing keys keep defaults."""
     raw = data or {}
     camera_raw = raw.get("camera", raw)
+    configured_view = str(camera_raw.get("camera_view", "unknown"))
+    legacy_motorcycle_view = configured_view if configured_view in ("approaching", "receding") else None
+    camera_view = "unknown" if legacy_motorcycle_view else configured_view
+    motorcycle_view = str(camera_raw.get("motorcycle_view", legacy_motorcycle_view or "approaching"))
     path_raw = raw.get("paths", {})
     threshold_raw = raw.get("thresholds", {})
     camera = CameraConfig(
         id=str(camera_raw.get("id", camera_raw.get("camera_id", "cam1"))),
         check_helmet=bool(camera_raw.get("check_helmet", True)),
-        check_seatbelt=bool(camera_raw.get("check_seatbelt", False)),
-        camera_view=str(camera_raw.get("camera_view", "approaching")),
+        check_seatbelt=bool(camera_raw.get("check_seatbelt", False)) and camera_view == "front",
+        camera_view=camera_view,
+        motorcycle_view=motorcycle_view,
         driver_side=str(camera_raw.get("driver_side", "right")),
         min_car_height=float(camera_raw.get("min_car_height", 120)),
         frame_skip=int(camera_raw.get("frame_skip", camera_raw.get("skip", 1))),
@@ -110,8 +118,10 @@ def load_config(data: dict | None = None) -> EngineConfig:
         raise ValueError("frame_skip must be at least 1")
     if camera.observe_every < 1:
         raise ValueError("observe_every must be at least 1")
-    if camera.camera_view not in ("approaching", "receding"):
-        raise ValueError("camera_view must be 'approaching' or 'receding'")
+    if camera.camera_view not in ("front", "side_or_rear", "unknown"):
+        raise ValueError("camera_view must be 'front', 'side_or_rear', or 'unknown'")
+    if camera.motorcycle_view not in ("approaching", "receding"):
+        raise ValueError("motorcycle_view must be 'approaching' or 'receding'")
     if camera.driver_side not in ("left", "right"):
         raise ValueError("driver_side must be 'left' or 'right'")
     paths = PathConfig(
@@ -128,6 +138,8 @@ def load_config(data: dict | None = None) -> EngineConfig:
         paths=paths,
         accumulator_max_age=int(raw.get("accumulator_max_age", 120)),
         lost_grace_frames=int(raw.get("lost_grace_frames", 15)),
+        transfer_time_gap=int(raw.get("transfer_time_gap", 15)),
+        transfer_position_gap=float(raw.get("transfer_position_gap", 80.0)),
         start_sec=float(raw.get("start_sec", 0.0)),
         end_sec=None if raw.get("end_sec") is None else float(raw["end_sec"]),
     )

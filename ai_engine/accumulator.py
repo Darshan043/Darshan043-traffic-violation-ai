@@ -129,6 +129,7 @@ class Accumulator:
         self._tracks: dict[int, TrackMemory] = {}
         self._recent_events: list[dict] = []
         self._recent_tracks: list[dict] = []
+        self.last_transfer: dict | None = None
 
     def get(self, track_id: int, cls: int, frame_idx: int = 0) -> TrackMemory:
         memory = self._tracks.get(track_id)
@@ -219,6 +220,11 @@ class Accumulator:
             return None
 
         _, old_id, memory = candidates[0]
+        old_box = memory.last_box
+        self.last_transfer = {
+            "from_track_id": old_id,
+            "from_box": ([old_box.x1, old_box.y1, old_box.x2, old_box.y2] if old_box else None),
+        }
         del self._tracks[old_id]
         memory.transferred_from_id = memory.transferred_from_id or old_id
         memory.track_id = track_id

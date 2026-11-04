@@ -150,10 +150,12 @@ known limitations on road-video crops.
   are implemented and covered by tests. They do not eliminate the risk of
   mistakenly merging two nearby vehicles.
 
-## Final validation run
+## Earlier validation run (superseded by the follow-up below)
 
-The full engine was run in both helmet and seatbelt modes on each available
-video. The validation explicitly used a normalized zone line at `y=0.90`.
+The earlier run used a normalized zone line at `y=0.90` for both videos and
+predated the camera-specific seatbelt safety setting and final duplicate
+suppression. Its result table and review pack below are historical only; use
+the follow-up results at the end of this file.
 Unique vehicle counts are the number of distinct tracker IDs seen by the
 respective mode; observation counts are per-frame detections.
 
@@ -168,8 +170,8 @@ were `TOO_FEW_OBSERVATIONS` 5, `CLEAR_COMPLIANCE` 1,
 `CONFLICTING_OBSERVATIONS` 3, `CLEAR_VIOLATION` 7, and
 `UNCLEAR_OBSERVATIONS` 11.
 
-The review pack is generated under the ignored
-`data/output/s6_review/` folder. `review_sheet.csv` has 27 event rows and the
+The earlier review pack is under the ignored
+`data/output/s6_review/` folder. Its `review_sheet.csv` had 27 event rows and the
 four requested empty reviewer fields. It is accompanied by `index.html`,
 `run_report.json`, `id_transfers.csv` (all 39 transfers as separate rows), and
 `crossings_without_event.csv` (header only; no such crossings were recorded).
@@ -225,3 +227,73 @@ fewer than the requested number of detections for several selected tracks.
 the injected blackout alone caused the loss. This is a controlled software
 stress test, not a real-world tracking accuracy measurement. Full per-track
 window data is in the ignored `data/output/s6_stress/stress_report.json`.
+
+## Zone, seatbelt, duplicate, and review-pack follow-up
+
+The full pipeline was rerun on both available videos using their per-video
+camera settings. Candidate zone analysis decoded every available frame and
+compared the normalized horizontal lines below:
+
+| Video | Tracked | y=.5 crossings (median px; >=120 px) | y=.6 | y=.7 | y=.8 | y=.9 | Selected zone | Never crossed |
+|---|---:|---|---|---|---|---|---:|---:|
+| `helmet_test.mp4` | 5 | 0 | 0 | 0 | 0 | 1 (403; 1) | .9 | 4 |
+| `test_road.mp4` | 219 | 24 (89.2; 0) | 25 (100.8; 2) | 29 (115.3; 11) | 39 (133.1; 25) | 11 (138.8; 10) | .8 | 180 |
+
+For `helmet_test.mp4`, .9 is the only candidate with a crossing. For
+`test_road.mp4`, .8 gives the most crossings and the largest number of crossing
+vehicles at least 120 pixels tall. These are geometric choices, not proof that
+the line is suitable for every camera. Candidate-line images and the list of
+tracks that never crossed are in the ignored `data/output/s6_review_v2/` folder.
+
+The prior `test_road.mp4` run produced **5 `NO_SEATBELT` events**. The current
+setting marks that camera `side_or_rear`, so seatbelt judging is disabled;
+the rerun produced **0 `NO_SEATBELT` events**. Cars remain tracked and there
+were 34 car-zone crossings with no event because seatbelt classification was
+disabled for this unverifiable view. This is a safety gate, not evidence that
+the scene contains no seatbelt violations.
+
+| Video | Frames / FPS | Tracked (motorcycles / cars) | Retained events by result | Retained reason codes | ID transfers |
+|---|---:|---:|---|---|---:|
+| `helmet_test.mp4` | 240 / 23.976 | 5 (3 / 2) | HELMET 1; all other results 0 | CLEAR_COMPLIANCE 1 | 0 |
+| `test_road.mp4` | 2,858 / 50.000 | 219 (8 / 211) | No events | None | 39 (6 motorcycles / 33 cars) |
+
+Across the three helmet event candidates, two were `NEEDS_REVIEW` /
+`TOO_FEW_OBSERVATIONS` and one was `HELMET` / `CLEAR_COMPLIANCE`. Thus the
+candidate review-needed rate was 2/3 (66.7%); after duplicate suppression, the
+retained-event review-needed rate was 0/1. `test_road.mp4` had no retained
+events, so its review-needed rate is not applicable.
+
+`helmet_test.mp4` contains **one visibly distinct rider**, represented by
+three tracker IDs: 2, 1, and 3. Their candidate events were at frames 36, 68,
+and 88. The previous in-pipeline suppression uses a much shorter 10-frame
+window and a same-decision/nearby-position check; the event gaps were 32 and
+20 frames, so it did not group them. The follow-up same-camera/type, <=2-second,
+IoU >.5 rule retained the 69-observation event for track 1 and recorded tracks
+2 and 3 as suppressed candidates. Result: **3 candidates before, 1 retained
+after, 2 explicitly listed in `suppressed_events.csv`**. This matching rule can
+also merge different vehicles in crowded scenes and needs human review.
+
+| Video | Vehicles tracked | ID transfers (motorcycle / car) | Car transfer rate | Sensitivity replay |
+|---|---:|---:|---:|---|
+| `helmet_test.mp4` | 5 | 0 / 0 | 0/2 (0%) | 0 with either tighter setting |
+| `test_road.mp4` | 219 | 6 / 33 | 33/211 (15.64%) | 60 px: 31 car transfers; 8 frames: 24 |
+
+The car transfer rate is above 10%. Tighter distance or frame-gap settings
+were evaluated offline only; the configured limits were **not changed**.
+These changes reduced the replayed car transfers by 2 and 9 respectively,
+but transfers are not necessarily incorrect and the replay is not a quality
+score.
+
+The rebuilt pack is `data/output/s6_review_v2/`. Its review sheet includes all
+three event candidates with a full-frame and crop image per row; the two
+suppressed candidates are also disclosed in `suppressed_events.csv`. The
+39 transfers have before/after images in `transfers.html` and blank
+`same_vehicle` fields in `transfers_sheet.csv`. `crossings_without_event.csv`
+lists crossed tracks with no retained event. Six images were visually checked:
+the three helmet crops show the same helmeted rider; the road scene contains
+small/distant vehicles, and their driver views do not make seatbelts
+verifiable. No clear detector mistake can be established from those images,
+but the seatbelt path is correctly disabled for this camera. The two available
+videos are not ground-truth identity evaluation, and `track_test3.mp4` remains
+unavailable. Stage 6 is **not fully validated** until the manual transfer and
+event review is complete.

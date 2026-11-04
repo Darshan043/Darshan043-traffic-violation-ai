@@ -12,7 +12,13 @@ from ai_engine.association import Box
 from ai_engine.config import EngineConfig
 from ai_engine.decision import decide, kind_of
 from ai_engine.evidence import EvidenceWriter
-from ai_engine.seatbelt import SeatbeltDetection, SeatbeltResult, car_driver_crop, seatbelt_result
+from ai_engine.seatbelt import (
+    SeatbeltDetection,
+    SeatbeltResult,
+    car_driver_crop,
+    guard_no_seatbelt_result,
+    seatbelt_result,
+)
 from ai_engine.tracking import Track, results_to_tracks
 from ai_engine.video_source import VideoSource
 from ai_engine.zone import Zone
@@ -101,6 +107,11 @@ class SeatbeltDetector:
                 )
 
         decision = seatbelt_result(detections, local_crop, driver_present=True, min_confidence=0.40)
+        decision = guard_no_seatbelt_result(
+            decision,
+            camera_view=self.config.camera.camera_view,
+            crop_height=crop_box.height,
+        )
         return SeatbeltAnalysis(track, decision, crop_box, crop_box, tuple(detections))
 
 
@@ -195,7 +206,8 @@ def process_cars(
                 frame_idx=frame_idx,
                 anchor=track.anchor,
                 active_track_ids=active,
-                time_gap=max(12, config.lost_grace_frames),
+                time_gap=config.transfer_time_gap,
+                position_gap=config.transfer_position_gap,
             )
             if old_track_id is not None:
                 zone.transfer(old_track_id, track.id)
@@ -207,10 +219,13 @@ def process_cars(
                         "to_track_id": track.id,
                         "frame_idx": frame_idx,
                         "anchor": track.anchor,
+                        "from_box": memory.last_transfer["from_box"],
+                        "to_box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2],
                     })
             if on_track is not None:
                 on_track({"camera_id": camera.id, "vehicle_type": "car",
-                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor})
+                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor,
+                          "box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2]})
             acc = memory.get(track.id, track.cls, frame_idx)
             acc.update_position(track.anchor, frame_idx, track.box)
             memory.remember_track(camera_id=camera.id, vehicle_class=track.cls,
@@ -225,6 +240,12 @@ def process_cars(
 
             if zone.crossed(track.id, track.anchor):
                 crossings += 1
+                if not camera.check_seatbelt:
+                    if on_crossing is not None:
+                        on_crossing({"frame_idx": frame_idx, "track_id": track.id,
+                                     "vehicle_type": "car", "anchor": track.anchor,
+                                     "event_emitted": False, "reason": "SEATBELT_DISABLED"})
+                    continue
                 if acc.finalized:
                     if on_crossing is not None:
                         on_crossing({"frame_idx": frame_idx, "track_id": track.id,
@@ -232,6 +253,18 @@ def process_cars(
                                      "event_emitted": False, "reason": "ALREADY_FINALIZED"})
                     continue
                 label, reason = decide(acc.observations, kind_of(track.cls), config.thresholds)
+                guarded = [item for item in acc.observations
+                           if getattr(item, "reason", "") == "UNVERIFIABLE_VIEW"]
+                if guarded:
+                    label, reason = "NEEDS_REVIEW", "UNVERIFIABLE_VIEW"
+                elif label == "VIOLATION":
+                    no_belt = [item for item in acc.observations
+                               if getattr(item, "label", "") == "no_seatbelt"
+                               and getattr(item, "reason", "") == "OK"]
+                    mean_conf = (sum(item.confidence for item in no_belt) / len(no_belt)
+                                 if no_belt else 0.0)
+                    if any((item.crop_height or 0.0) < 200 for item in no_belt) or mean_conf < 0.70:
+                        label, reason = "NEEDS_REVIEW", "UNVERIFIABLE_VIEW"
                 if memory.soft_duplicate(
                     camera_id=camera.id,
                     vehicle_class=track.cls,
@@ -267,10 +300,15 @@ def process_cars(
                     "observations": len(acc.observations),
                     "anchor": track.anchor,
                     "transferred_from_id": acc.transferred_from_id,
+                    "vehicle_box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2],
                 }
                 best_frame = acc.best_frame if acc.best_frame is not None else frame
                 best_box = acc.best_box if acc.best_box is not None else track.box
                 best_analysis = acc.best_context if isinstance(acc.best_context, SeatbeltAnalysis) else None
+                duplicate_box = best_analysis.track.box if best_analysis else best_box
+                event["vehicle_box"] = [
+                    duplicate_box.x1, duplicate_box.y1, duplicate_box.x2, duplicate_box.y2,
+                ]
                 event["evidence"] = evidence.save_event(
                     event, best_frame, best_box, zone, analysis=best_analysis
                 )
@@ -290,9 +328,23 @@ def process_cars(
             if track_id in active:
                 continue
             if frame_idx - acc.last_seen >= config.lost_grace_frames and zone.lost(track_id):
+                if not camera.check_seatbelt:
+                    continue
                 if acc.finalized:
                     continue
                 label, reason = decide(acc.observations, kind_of(acc.cls), config.thresholds)
+                guarded = [item for item in acc.observations
+                           if getattr(item, "reason", "") == "UNVERIFIABLE_VIEW"]
+                if guarded:
+                    label, reason = "NEEDS_REVIEW", "UNVERIFIABLE_VIEW"
+                elif label == "VIOLATION":
+                    no_belt = [item for item in acc.observations
+                               if getattr(item, "label", "") == "no_seatbelt"
+                               and getattr(item, "reason", "") == "OK"]
+                    mean_conf = (sum(item.confidence for item in no_belt) / len(no_belt)
+                                 if no_belt else 0.0)
+                    if any((item.crop_height or 0.0) < 200 for item in no_belt) or mean_conf < 0.70:
+                        label, reason = "NEEDS_REVIEW", "UNVERIFIABLE_VIEW"
                 if memory.soft_duplicate(
                     camera_id=camera.id,
                     vehicle_class=acc.cls,
@@ -324,10 +376,17 @@ def process_cars(
                     "observations": len(acc.observations),
                     "anchor": acc.last_anchor,
                     "transferred_from_id": acc.transferred_from_id,
+                    "vehicle_box": ([acc.last_box.x1, acc.last_box.y1, acc.last_box.x2, acc.last_box.y2]
+                                    if acc.last_box is not None else None),
                 }
                 best_frame = acc.best_frame if acc.best_frame is not None else frame
                 best_box = acc.best_box if acc.best_box is not None else acc.last_box
                 best_analysis = acc.best_context if isinstance(acc.best_context, SeatbeltAnalysis) else None
+                if best_box is not None:
+                    duplicate_box = best_analysis.track.box if best_analysis else best_box
+                    event["vehicle_box"] = [
+                        duplicate_box.x1, duplicate_box.y1, duplicate_box.x2, duplicate_box.y2,
+                    ]
                 event["evidence"] = evidence.save_event(
                     event, best_frame, best_box, zone, analysis=best_analysis
                 )

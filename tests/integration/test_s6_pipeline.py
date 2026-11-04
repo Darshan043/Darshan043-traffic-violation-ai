@@ -63,7 +63,7 @@ class _FakeSeatbeltDetector:
         crop = Box(25, 5, 35, 15)
         return SeatbeltAnalysis(
             track,
-            SeatbeltResult("no_seatbelt", 0.9, "OK"),
+            SeatbeltResult("no_seatbelt", 0.9, "OK", 300),
             crop,
             crop,
             (SeatbeltDetection(Box(2, 2, 7, 8), "no_seatbelt", 0.9),),
@@ -79,6 +79,8 @@ def test_standalone_pipeline_runs_both_checks_and_saves_events_and_evidence(tmp_
             "observe_distance": 1000,
             "min_motorcycle_width": 1,
             "min_car_height": 1,
+            "camera_view": "front",
+            "check_seatbelt": True,
         },
         "paths": {"evidence_dir": str(tmp_path / "evidence")},
     })

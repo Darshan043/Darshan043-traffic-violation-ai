@@ -114,7 +114,8 @@ def process_motorcycles(
                 frame_idx=frame_idx,
                 anchor=track.anchor,
                 active_track_ids=active,
-                time_gap=max(12, config.lost_grace_frames),
+                time_gap=config.transfer_time_gap,
+                position_gap=config.transfer_position_gap,
             )
             if old_track_id is not None:
                 zone.transfer(old_track_id, track.id)
@@ -126,10 +127,13 @@ def process_motorcycles(
                         "to_track_id": track.id,
                         "frame_idx": frame_idx,
                         "anchor": track.anchor,
+                        "from_box": memory.last_transfer["from_box"],
+                        "to_box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2],
                     })
             if on_track is not None:
                 on_track({"camera_id": camera.id, "vehicle_type": "motorcycle",
-                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor})
+                          "track_id": track.id, "frame_idx": frame_idx, "anchor": track.anchor,
+                          "box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2]})
             acc = memory.get(track.id, track.cls, frame_idx)
             acc.update_position(track.anchor, frame_idx, track.box)
             memory.remember_track(camera_id=camera.id, vehicle_class=track.cls,
@@ -189,10 +193,15 @@ def process_motorcycles(
                     "observations": len(acc.observations),
                     "anchor": track.anchor,
                     "transferred_from_id": acc.transferred_from_id,
+                    "vehicle_box": [track.box.x1, track.box.y1, track.box.x2, track.box.y2],
                 }
                 best_analysis = acc.best_context if isinstance(acc.best_context, HelmetAnalysis) else None
                 evidence_frame = acc.best_frame if acc.best_frame is not None else frame
                 evidence_vehicle_box = acc.best_box if acc.best_box is not None else track.box
+                duplicate_box = best_analysis.track.box if best_analysis else evidence_vehicle_box
+                event["vehicle_box"] = [
+                    duplicate_box.x1, duplicate_box.y1, duplicate_box.x2, duplicate_box.y2,
+                ]
                 event["evidence"] = evidence.save_event(
                     event, evidence_frame, evidence_vehicle_box, zone, analysis=best_analysis
                 )
@@ -246,9 +255,16 @@ def process_motorcycles(
                     "observations": len(acc.observations),
                     "anchor": acc.last_anchor,
                     "transferred_from_id": acc.transferred_from_id,
+                    "vehicle_box": ([acc.last_box.x1, acc.last_box.y1, acc.last_box.x2, acc.last_box.y2]
+                                    if acc.last_box is not None else None),
                 }
                 evidence_frame = acc.best_frame if acc.best_frame is not None else frame
                 evidence_vehicle_box = acc.best_box if acc.best_box is not None else acc.last_box
+                if evidence_vehicle_box is not None:
+                    event["vehicle_box"] = [
+                        evidence_vehicle_box.x1, evidence_vehicle_box.y1,
+                        evidence_vehicle_box.x2, evidence_vehicle_box.y2,
+                    ]
                 event["evidence"] = evidence.save_event(event, evidence_frame, evidence_vehicle_box, zone)
                 acc.finalized = True
                 memory.remember_event(camera_id=camera.id, vehicle_class=acc.cls,

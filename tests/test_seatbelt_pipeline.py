@@ -22,9 +22,10 @@ def make_video(path, frames=4):
 
 
 class FakeSeatbeltDetector:
-    def __init__(self, label="no_seatbelt", confidence=0.9):
+    def __init__(self, label="no_seatbelt", confidence=0.9, crop_height=300):
         self.label = label
         self.confidence = confidence
+        self.crop_height = crop_height
         self.index = 0
 
     def track_cars(self, frame):
@@ -35,7 +36,7 @@ class FakeSeatbeltDetector:
         return [Track(42, 2, box, 0.9, (center, box.y2))]
 
     def seatbelt_observation(self, frame, track):
-        result = SeatbeltResult(self.label, self.confidence, "OK")
+        result = SeatbeltResult(self.label, self.confidence, "OK", self.crop_height)
         return SeatbeltAnalysis(
             track,
             result,
@@ -54,6 +55,7 @@ def test_car_seatbelt_pipeline_emits_once_when_track_crosses_zone(tmp_path):
             "observe_distance": 1000,
             "min_car_height": 1,
             "check_seatbelt": True,
+            "camera_view": "front",
         },
         "paths": {"evidence_dir": str(tmp_path / "evidence")},
     })
@@ -88,6 +90,7 @@ def test_car_seatbelt_pipeline_handles_unclear_low_confidence(tmp_path):
             "observe_distance": 1000,
             "min_car_height": 1,
             "check_seatbelt": True,
+            "camera_view": "front",
         },
         "paths": {"evidence_dir": str(tmp_path / "evidence")},
     })
@@ -100,3 +103,32 @@ def test_car_seatbelt_pipeline_handles_unclear_low_confidence(tmp_path):
     assert len(events) == 1
     assert events[0]["decision"] == "NEEDS_REVIEW"
     assert events[0]["reason"] == "UNCLEAR_OBSERVATIONS"
+
+
+@pytest.mark.parametrize(
+    ("confidence", "crop_height"),
+    [(0.9, 100), (0.65, 300)],
+)
+def test_unverifiable_no_seatbelt_event_is_downgraded(confidence, crop_height, tmp_path):
+    video = tmp_path / "seatbelt_unverifiable.mp4"
+    make_video(video)
+    config = load_config({
+        "camera": {
+            "zone": [(32, 0), (32, 48)],
+            "observe_distance": 1000,
+            "min_car_height": 1,
+            "check_seatbelt": True,
+            "camera_view": "front",
+        },
+        "paths": {"evidence_dir": str(tmp_path / "evidence")},
+    })
+    events = process_cars(
+        str(video),
+        config,
+        lambda event: None,
+        detector=FakeSeatbeltDetector(confidence=confidence, crop_height=crop_height),
+    )
+    assert len(events) == 1
+    assert events[0]["decision"] == "NEEDS_REVIEW"
+    assert events[0]["ai_result"] == "unclear"
+    assert events[0]["reason"] == "UNVERIFIABLE_VIEW"

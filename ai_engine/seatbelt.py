@@ -8,7 +8,7 @@ from typing import Iterable, Literal
 from ai_engine.association import Box
 
 SeatbeltLabel = Literal["seatbelt", "no_seatbelt", "unclear"]
-SeatbeltReason = Literal["OK", "TOO_SMALL", "NO_DRIVER", "LOW_CONF"]
+SeatbeltReason = Literal["OK", "TOO_SMALL", "NO_DRIVER", "LOW_CONF", "UNVERIFIABLE_VIEW"]
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,21 @@ class SeatbeltResult:
     label: SeatbeltLabel
     confidence: float
     reason: SeatbeltReason
+    crop_height: float | None = None
+
+
+def guard_no_seatbelt_result(
+    result: SeatbeltResult,
+    *,
+    camera_view: Literal["front", "side_or_rear", "unknown"],
+    crop_height: float,
+) -> SeatbeltResult:
+    """Require a large, confident front-facing crop before confirming no seatbelt."""
+    if result.label != "no_seatbelt":
+        return result
+    if camera_view != "front" or crop_height < 200 or result.confidence < 0.70:
+        return SeatbeltResult("unclear", result.confidence, "UNVERIFIABLE_VIEW", crop_height)
+    return SeatbeltResult(result.label, result.confidence, result.reason, crop_height)
 
 
 def car_driver_crop(
