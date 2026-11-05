@@ -202,3 +202,9 @@ excluded from that percentage.
   finalizes each observation. Persisted vehicle events are reconciled at run
   completion with the same observation-ranked duplicate suppression as the CLI,
   so live delivery does not change final statistics or event history.
+
+## Latest verification rerun (2026-11-05)
+
+- Default pytest, user-reported: **133 passed, 1 deselected, 0 failed, 4
+  warnings** in 22.62 seconds. Peak memory was not measured.
+- Stage 7 API smoke, user-reported: **PASS (42 checks)**.
