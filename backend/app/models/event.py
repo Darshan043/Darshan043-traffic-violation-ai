@@ -36,6 +36,7 @@ def result_from_pipeline(decision: str, ai_result: str) -> VehicleEventResult:
 class VehicleEvent(BaseModel):
     event_id: str
     camera_id: str
+    run_id: str = ""
     track_id: int
     vehicle_type: str
     violation_type: str
@@ -43,8 +44,10 @@ class VehicleEvent(BaseModel):
     ai_result: str  # helmet | no_helmet | seatbelt | no_seatbelt | unclear
     confidence: float = 0.0
     reason: str = ""
+    frames_used: int = 0
     timestamp_sec: float = 0.0
     frame_idx: int = 0
+    evidence: dict[str, str] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     @computed_field

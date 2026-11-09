@@ -12,6 +12,9 @@ class StatsSummary(BaseModel):
     compliance_percentage: float  # compliant / (compliant + violations) * 100, excluding NEEDS_REVIEW
     reviewed_count: int
     unreviewed_count: int
+    helmet_compliance_percentage: float = 100.0
+    seatbelt_compliance_percentage: float = 100.0
+    review_count: int = 0
 
 
 class DailyStat(BaseModel):

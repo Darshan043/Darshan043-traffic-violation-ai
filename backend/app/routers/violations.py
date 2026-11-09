@@ -65,8 +65,7 @@ def export_violations_csv(
     _: User = Depends(require_role("admin", "reviewer", "viewer")),
     repo: Repository = Depends(get_repository),
 ) -> StreamingResponse:
-    # Retrieve all matching violations without paging
-    items, _ = repo.list_violations(
+    items = repo.iter_violations(
         violation_type=type,
         ai_result=result,
         camera_id=camera,
@@ -74,8 +73,6 @@ def export_violations_csv(
         date_to=date_to,
         track_id=track_id,
         review_status=review_status,
-        page=1,
-        limit=100000,
     )
 
     def iter_csv():

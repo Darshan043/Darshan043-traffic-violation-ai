@@ -11,32 +11,59 @@ from backend.app.core.config import settings
 
 
 class SensitiveDataRedactionFilter(logging.Filter):
-    """Filter that strips tokens, passwords, and RTSP credentials from log records."""
+    """Filter that strips tokens, passwords, and database credentials from logs."""
 
     @staticmethod
     def redact(text: str) -> str:
         if not isinstance(text, str):
             return text
-        # Redact token parameter in URLs/queries (e.g., token=xyz or &token=xyz)
-        text = re.sub(r"(token=)[^&\s'\"]+", r"\1REDACTED", text, flags=re.IGNORECASE)
+        # Redact access tokens, full database URIs, and labeled secret fields.
+        text = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer REDACTED", text)
+        text = re.sub(
+            r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+            "REDACTED_JWT",
+            text,
+        )
+        text = re.sub(r"(?i)(token=)[^&\s'\"]+", r"\1REDACTED", text)
+        text = re.sub(r"(?i)mongodb(?:\+srv)?://[^\s'\"<>]+", "mongodb://REDACTED", text)
+        text = re.sub(
+            r"(?i)([\"']?authorization[\"']?\s*[=:]\s*)"
+            r"(?:\"[^\"]*\"|'[^']*'|Bearer\s+[A-Za-z0-9._~+/=-]+|[^\s,;&}]+)",
+            r"\1Bearer REDACTED",
+            text,
+        )
+        def redact_secret_field(match: re.Match[str]) -> str:
+            marker = "***" if match.group(2).lower() == "password" else "REDACTED"
+            return f'{match.group(1)}{match.group(2)}{match.group(3)}"{marker}"'
+
+        text = re.sub(
+            r"(?i)(?<![?&])([\"']?)(password|password_hash|hashed_password|passwd|pwd|"
+            r"access_token|refresh_token|token|secret_key|api_key)"
+            r"([\"']?\s*[=:]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;&}]+)",
+            redact_secret_field,
+            text,
+        )
         # Redact RTSP credentials: rtsp://user:password@host
         text = re.sub(r"(rtsp://[^:]+:)[^@]+(@)", r"\1***\2", text, flags=re.IGNORECASE)
-        # Redact passwords in JSON strings
-        text = re.sub(r'("password"\s*:\s*)"[^"]+"', r'\1"***"', text, flags=re.IGNORECASE)
         return text
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.msg, str):
-            record.msg = self.redact(record.msg)
-        if record.args:
+        try:
+            record.msg = self.redact(record.getMessage())
+            record.args = ()
+        except Exception:
+            if isinstance(record.msg, str):
+                record.msg = self.redact(record.msg)
             if isinstance(record.args, dict):
                 record.args = {
-                    k: (self.redact(v) if isinstance(v, str) else v)
-                    for k, v in record.args.items()
+                    key: ("REDACTED" if re.search(
+                        r"(?i)password|token|authorization|secret|api_key", str(key)
+                    ) else self.redact(value) if isinstance(value, str) else value)
+                    for key, value in record.args.items()
                 }
             elif isinstance(record.args, tuple):
                 record.args = tuple(
-                    (self.redact(item) if isinstance(item, str) else item)
+                    self.redact(item) if isinstance(item, str) else item
                     for item in record.args
                 )
         return True
@@ -74,7 +101,9 @@ def setup_logging() -> logging.Logger:
     logger.addHandler(console_handler)
 
     # Also attach the filter to uvicorn access logs so URL tokens are redacted
-    for uvicorn_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+    for uvicorn_name in (
+        "uvicorn", "uvicorn.access", "uvicorn.error", "pymongo", "pymongo.serverSelection"
+    ):
         u_logger = logging.getLogger(uvicorn_name)
         u_logger.addFilter(redaction_filter)
 

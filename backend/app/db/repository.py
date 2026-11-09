@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any
 
 from backend.app.models.camera import Camera
@@ -32,6 +33,10 @@ class Repository(ABC):
     @abstractmethod
     def update_user(self, user_id: str, updates: dict[str, Any]) -> User | None:
         pass
+
+    def record_login(self, user_id: str) -> User | None:
+        """Record a successful login; optional repositories can override this."""
+        return self.update_user(user_id, {"last_login_at": datetime.now(timezone.utc).isoformat()})
 
     # --- Cameras ---
     @abstractmethod
@@ -90,6 +95,18 @@ class Repository(ABC):
     @abstractmethod
     def update_violation(self, event_id: str, updates: dict[str, Any]) -> Violation | None:
         pass
+
+    def iter_violations(self, **filters: Any):
+        """Yield filtered violations in pages for export callers."""
+        page = 1
+        while True:
+            items, total = self.list_violations(page=page, limit=500, **filters)
+            if not items:
+                return
+            yield from items
+            if page * 500 >= total:
+                return
+            page += 1
 
     # --- System Settings ---
     @abstractmethod

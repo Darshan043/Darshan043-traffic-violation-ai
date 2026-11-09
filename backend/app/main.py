@@ -26,8 +26,24 @@ logger = setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Traffic AI Backend initialized with storage_dir=%s", settings.storage_path)
-    yield
-    logger.info("Traffic AI Backend shutting down")
+    repo = None
+    mongo_repository_type = None
+    if settings.REPO_BACKEND == "mongo":
+        from backend.app.db.mongo_repo import MongoRepository
+        from backend.app.deps import get_repository
+
+        mongo_repository_type = MongoRepository
+        repo = get_repository()
+        if isinstance(repo, mongo_repository_type):
+            repo.initialize()
+    try:
+        yield
+    finally:
+        if repo is not None and mongo_repository_type is not None and isinstance(
+            repo, mongo_repository_type
+        ):
+            repo.close()
+        logger.info("Traffic AI Backend shutting down")
 
 
 app = FastAPI(

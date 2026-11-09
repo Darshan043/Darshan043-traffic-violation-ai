@@ -24,6 +24,10 @@ def get_stats_summary(
     _: User = Depends(require_role("admin", "reviewer", "viewer")),
     repo: Repository = Depends(get_repository),
 ) -> StatsSummary:
+    aggregate = getattr(repo, "get_stats_summary", None)
+    if aggregate is not None:
+        return StatsSummary(**aggregate())
+
     events = repo.list_vehicle_events()
     violations_list, _ = repo.list_violations(limit=100000)
 
@@ -45,6 +49,15 @@ def get_stats_summary(
         compliance_percentage=pct,
         reviewed_count=reviewed_count,
         unreviewed_count=unreviewed_count,
+        helmet_compliance_percentage=_calculate_compliance_percentage(
+            sum(1 for e in events if e.result == "HELMET"),
+            sum(1 for e in events if e.result == "NO_HELMET"),
+        ),
+        seatbelt_compliance_percentage=_calculate_compliance_percentage(
+            sum(1 for e in events if e.result == "SEATBELT"),
+            sum(1 for e in events if e.result == "NO_SEATBELT"),
+        ),
+        review_count=needs_review,
     )
 
 
@@ -53,6 +66,10 @@ def get_daily_stats(
     _: User = Depends(require_role("admin", "reviewer", "viewer")),
     repo: Repository = Depends(get_repository),
 ) -> list[DailyStat]:
+    aggregate = getattr(repo, "get_stats_daily", None)
+    if aggregate is not None:
+        return [DailyStat(**row) for row in aggregate()]
+
     events = repo.list_vehicle_events()
     daily_groups: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "compliant": 0, "violations": 0, "needs_review": 0})
 
@@ -85,6 +102,10 @@ def get_camera_stats(
     _: User = Depends(require_role("admin", "reviewer", "viewer")),
     repo: Repository = Depends(get_repository),
 ) -> list[CameraStat]:
+    aggregate = getattr(repo, "get_stats_per_camera", None)
+    if aggregate is not None:
+        return [CameraStat(**row) for row in aggregate()]
+
     events = repo.list_vehicle_events()
     cameras = {c.camera_id: c.name for c in repo.list_cameras()}
 

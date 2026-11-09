@@ -12,9 +12,11 @@ class User(BaseModel):
     id: str
     username: str
     hashed_password: str
+    full_name: str = ""
     role: UserRole
     is_active: bool = True
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_login_at: str | None = None
 
 
 class UserCreate(BaseModel):

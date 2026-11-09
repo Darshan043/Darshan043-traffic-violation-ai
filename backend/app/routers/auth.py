@@ -33,6 +33,7 @@ def login(
         )
 
     reset_login_failures(payload.username)
+    user = repo.record_login(user.id) or user
     token = create_access_token({"sub": user.id, "role": user.role})
     return TokenResponse(
         access_token=token,

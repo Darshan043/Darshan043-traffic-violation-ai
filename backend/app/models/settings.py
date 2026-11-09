@@ -12,4 +12,7 @@ class SystemSettings(BaseModel):
     duplicate_window_sec: float = 2.0
     duplicate_iou_threshold: float = 0.5
     max_workers: int = 1
+    frame_skip: int = 1
+    image_size: int = 640
+    evidence_retention_days: int = 30
     extra: dict[str, Any] = Field(default_factory=dict)

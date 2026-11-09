@@ -5,8 +5,16 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
-ReviewStatus = Literal["UNREVIEWED", "REVIEWED"]
-FinalDecision = Literal["VIOLATION", "COMPLIANCE", "DISMISSED"]
+ReviewStatus = Literal[
+    "not_required", "pending", "confirmed", "rejected",
+    # Legacy values remain accepted for the existing API and JSON repository.
+    "UNREVIEWED", "REVIEWED",
+]
+FinalDecision = Literal[
+    "CONFIRMED_VIOLATION", "NOT_A_VIOLATION", "PENDING",
+    # Legacy API values remain accepted for Stage 7 compatibility.
+    "VIOLATION", "COMPLIANCE", "DISMISSED",
+]
 
 
 class EvidencePaths(BaseModel):
@@ -32,6 +40,7 @@ class Violation(BaseModel):
     reviewed_at: str | None = None
     review_note: str | None = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    review_history: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ViolationReviewRequest(BaseModel):

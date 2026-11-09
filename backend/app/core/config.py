@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from pydantic import field_validator
+from typing import Literal
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -22,6 +24,10 @@ class Settings(BaseSettings):
     STORAGE_DIR: str = "storage"
     MAX_UPLOAD_MB: int = 500
     MAX_WORKERS: int = 1
+    MONGO_URL: str = ""
+    MONGO_DB: str = "traffic_ai"
+    MONGO_OPERATION_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
+    REPO_BACKEND: Literal["json", "mongo"] = "json"
 
     @field_validator("SECRET_KEY")
     @classmethod

@@ -22,7 +22,7 @@ from backend.app.core.logging_config import SensitiveDataRedactionFilter
 from backend.app.core.security import create_access_token, get_password_hash
 from backend.app.db.json_repo import JsonFileRepository
 from backend.app.deps import _login_failures, set_repository
-from backend.app.main import app
+from backend.app.main import app, lifespan
 from backend.app.models.camera import Camera
 from backend.app.models.event import VehicleEvent, result_from_pipeline
 from backend.app.models.user import User
@@ -34,6 +34,7 @@ from backend.app.services.engine_manager import WorkerHandle, engine_manager
 @pytest.fixture(autouse=True)
 def clean_state(tmp_path, monkeypatch):
     """Isolate repository storage, reset rate limits, and ensure engine manager is stopped."""
+    monkeypatch.setattr(settings, "REPO_BACKEND", "json")
     test_repo = JsonFileRepository(data_dir=tmp_path / "data")
     set_repository(test_repo)
     _login_failures.clear()
@@ -74,6 +75,17 @@ def clean_state(tmp_path, monkeypatch):
         engine_manager.active_worker.stop_event.set()
         engine_manager.active_worker.process.terminate()
         engine_manager.active_worker = None
+
+
+def test_json_test_repository_skips_mongo_initialization(clean_state, monkeypatch):
+    """A stale Mongo setting must not call Mongo methods on a JSON test repo."""
+    monkeypatch.setattr(settings, "REPO_BACKEND", "mongo")
+
+    async def enter_lifespan():
+        async with lifespan(app):
+            assert isinstance(clean_state, JsonFileRepository)
+
+    asyncio.run(enter_lifespan())
 
 
 @pytest.fixture

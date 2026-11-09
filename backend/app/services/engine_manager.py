@@ -10,6 +10,7 @@ from pathlib import Path
 import queue
 import threading
 from typing import Any
+import uuid
 import cv2
 import numpy as np
 
@@ -263,6 +264,7 @@ class EngineManager:
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         camera_id = worker.camera_id
+        run_id = uuid.uuid4().hex if settings.REPO_BACKEND == "mongo" else ""
         while worker.process.is_alive() or not worker.event_queue.empty():
             try:
                 msg = worker.event_queue.get(timeout=0.5)
@@ -275,6 +277,10 @@ class EngineManager:
                 self._broadcast_candidate(event_data, loop)
             elif msg_type == "events_complete":
                 for event_data in msg.get("events", []):
+                    if run_id:
+                        event_data = dict(event_data)
+                        event_data["run_id"] = run_id
+                        event_data["event_id"] = f"{run_id}_{event_data.get('event_id', 'event')}"
                     self._record_event(event_data, repo, loop)
             elif msg_type == "finished":
                 logger.info("Video processing finished for camera %s", camera_id)
@@ -346,8 +352,11 @@ class EngineManager:
             violation_type=v_type,
             decision=decision,
             ai_result=ai_result,
+            run_id=str(event.get("run_id", "")),
             confidence=float(event.get("confidence", 0.0)),
             reason=event.get("reason", ""),
+            frames_used=int(event.get("observations", 0)),
+            evidence=event.get("evidence", {}),
             timestamp_sec=float(event.get("timestamp_sec", 0.0)),
             frame_idx=int(event.get("frame_idx", 0)),
             created_at=now,
@@ -355,7 +364,14 @@ class EngineManager:
         repo.save_vehicle_event(ve)
 
         # 2. Store violation if NO_HELMET, NO_SEATBELT, or NEEDS_REVIEW
-        if decision in ("VIOLATION", "NEEDS_REVIEW"):
+        if ve.result in ("NO_HELMET", "NO_SEATBELT", "NEEDS_REVIEW"):
+            is_mongo = settings.REPO_BACKEND == "mongo"
+            if is_mongo:
+                review_status = "pending" if ve.result == "NEEDS_REVIEW" else "not_required"
+                final_decision = "PENDING" if ve.result == "NEEDS_REVIEW" else "CONFIRMED_VIOLATION"
+            else:
+                review_status = "UNREVIEWED"
+                final_decision = None
             violation = Violation(
                 event_id=ve.event_id,
                 camera_id=ve.camera_id,
@@ -365,8 +381,8 @@ class EngineManager:
                 detection_confidence=ve.confidence,
                 reason_code=ve.reason,
                 evidence=event.get("evidence", {}),
-                review_status="UNREVIEWED",
-                final_decision=None,
+                review_status=review_status,
+                final_decision=final_decision,
                 reviewed_by=None,
                 reviewed_at=None,
                 review_note=None,

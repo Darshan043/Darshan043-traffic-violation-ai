@@ -8,6 +8,7 @@ from typing import Callable
 from fastapi import Depends, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from backend.app.core.config import settings
 from backend.app.core.security import decode_access_token
 from backend.app.db.json_repo import JsonFileRepository
 from backend.app.db.repository import Repository
@@ -20,7 +21,12 @@ _repo: Repository | None = None
 def get_repository() -> Repository:
     global _repo
     if _repo is None:
-        _repo = JsonFileRepository()
+        if settings.REPO_BACKEND == "mongo":
+            from backend.app.db.mongo_repo import MongoRepository
+
+            _repo = MongoRepository()
+        else:
+            _repo = JsonFileRepository()
     return _repo
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from filelock import FileLock
@@ -82,6 +83,9 @@ class JsonFileRepository(Repository):
             data[user_id] = user_data
             self._write_json(self.users_file, data)
             return User(**user_data)
+
+    def record_login(self, user_id: str) -> User | None:
+        return self.update_user(user_id, {"last_login_at": datetime.now(timezone.utc).isoformat()})
 
     # --- Cameras ---
     def get_camera(self, camera_id: str) -> Camera | None:
